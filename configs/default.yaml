@@ -1,0 +1,26 @@
+# Parametros base compartidos por todos los experimentos.
+# Un experimento concreto hereda/sobreescribe estos valores (ver chuqui_kaolinite.yaml).
+
+scene:
+  path: data/raw/  # ruta a la escena Sentinel-2 L2A (.SAFE)
+  bands: [B02, B03, B04, B05, B06, B07, B08, B8A, B11, B12]
+
+aoi:
+  bbox: null  # [min_lon, min_lat, max_lon, max_lat]
+
+preprocessing:
+  target_resolution_m: 20
+  cloud_mask: true
+  scl_classes_to_mask: [3, 8, 9, 10]  # sombra de nube, nube media/alta, cirrus
+
+mineral:
+  target: null
+  usgs_sample_id: null
+
+algorithm:
+  name: sam  # sam | random_forest | unmixing
+  params:
+    angle_threshold_rad: 0.1
+
+output:
+  dir: data/processed/

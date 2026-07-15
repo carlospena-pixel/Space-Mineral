@@ -1,0 +1,21 @@
+# Experimento concreto: distrito de Chuquicamata, deteccion de caolinita con SAM (Nivel 1).
+
+defaults: default.yaml
+
+scene:
+  path: data/raw/S2A_MSIL2A_CHUQUI_EXAMPLE.SAFE
+
+aoi:
+  bbox: [-68.95, -22.35, -68.85, -22.25]
+
+mineral:
+  target: kaolinite
+  usgs_sample_id: KGa-1  # Kaolinite CM9, splib07
+
+algorithm:
+  name: sam
+  params:
+    angle_threshold_rad: 0.1
+
+output:
+  dir: data/processed/chuqui_kaolinite/

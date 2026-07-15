@@ -1,0 +1,36 @@
+# Data (no versionado; se regenera desde raw/ + codigo)
+data/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Variables de entorno / secretos
+.env
+
+# Escenas Sentinel-2 crudas
+*.SAFE
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing / cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
