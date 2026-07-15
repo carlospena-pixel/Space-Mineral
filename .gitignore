@@ -1,5 +1,4 @@
 # Data (no versionado; se regenera desde raw/ + codigo)
-data/
 outputs/
 
 # Python
