@@ -8,6 +8,14 @@ from typing import Any
 
 import yaml
 
+# Orden estandar de bandas Sentinel-2 usado en todo el pipeline (io, spectral,
+# algorithms). B10 (cirrus, ~1375 nm) se excluye porque no viene en el
+# producto L2A: Sen2Cor la descarta durante la correccion atmosferica, ya
+# que solo sirve para deteccion de cirrus en L1C.
+BAND_ORDER: list[str] = [
+    "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B9", "B11", "B12",
+]
+
 
 @dataclass
 class Config:

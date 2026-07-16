@@ -8,16 +8,27 @@ import numpy as np
 
 
 class Detector(ABC):
-    """Contrato que SAM, Random Forest y unmixing cumplen por igual.
+    """Contrato comun a todos los detectores (SAM, Random Forest, unmixing, ...).
 
-    El pipeline no sabe que algoritmo usa, solo llama a fit/predict.
+    El pipeline no conoce el algoritmo concreto: solo llama a predict() con
+    el cubo de la escena y la firma de referencia del mineral objetivo.
     """
 
     @abstractmethod
-    def fit(self, cube: np.ndarray, reference: np.ndarray) -> "Detector":
-        ...
+    def predict(self, cube: np.ndarray, reference: np.ndarray) -> np.ndarray:
+        """Calcula el mapa de puntaje de deteccion del mineral en la escena.
 
-    @abstractmethod
-    def predict(self, cube: np.ndarray) -> np.ndarray:
-        """Devuelve un mapa de puntaje (mismo alto/ancho que cube)."""
+        Parameters
+        ----------
+        cube:
+            Cubo de reflectancia de la escena, forma (n_bandas, alto, ancho).
+        reference:
+            Firma espectral de referencia del mineral objetivo, forma (n_bandas,).
+
+        Returns
+        -------
+        np.ndarray
+            Mapa de puntaje 2D, forma (alto, ancho): a mayor valor, mayor
+            probabilidad/similitud de presencia del mineral segun el algoritmo.
+        """
         ...
