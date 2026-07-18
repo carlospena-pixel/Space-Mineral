@@ -1,4 +1,10 @@
-# Data (no versionado; se regenera desde raw/ + codigo)
+# Datos (no versionados; se regeneran desde raw/ + codigo)
+# Excepcion: las firmas de referencia (.txt pequenos) en data/external/
+# SI se comparten por git, porque el equipo las necesita sin descargar datos.
+data/*
+!data/external/
+data/external/*
+!data/external/*.txt
 outputs/
 
 # Python
@@ -19,6 +25,10 @@ env/
 
 # Escenas Sentinel-2 crudas
 *.SAFE
+
+# Salidas graficas y archivos comprimidos
+*.png
+*.zip
 
 # Jupyter
 .ipynb_checkpoints/
