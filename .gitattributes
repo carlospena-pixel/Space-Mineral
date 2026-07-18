@@ -1,0 +1,15 @@
+# Normaliza los fines de linea: en el repositorio SIEMPRE se guardan como LF.
+# Sin esto, Windows usa CRLF y cada push/pull marca archivos como "modificados"
+# aunque el contenido sea identico. Esa es la causa de que Camila y Carlos no
+# vieran los mismos resultados. Con esta regla, ambos computadores convergen.
+* text=auto eol=lf
+
+# Archivos binarios: git NUNCA debe convertir sus fines de linea.
+*.png  binary
+*.jpg  binary
+*.tif  binary
+*.tiff binary
+*.jp2  binary
+*.zip  binary
+*.npy  binary
+*.npz  binary
