@@ -51,3 +51,11 @@ select = ["E", "F", "I", "UP"]
 [tool.isort]
 profile = "black"
 src_paths = ["src"]
+
+[tool.pytest.ini_options]
+# Los tests viven en tests/. Se acota la recoleccion a esa carpeta para no
+# arrastrar prototipos sueltos en scripts/ (p. ej. scripts/test_masking.py, que
+# colisionaria por basename con tests/test_masking.py). pythonpath = ["src"]
+# permite `pytest -q` sin exportar PYTHONPATH ni instalar el paquete.
+testpaths = ["tests"]
+pythonpath = ["src"]

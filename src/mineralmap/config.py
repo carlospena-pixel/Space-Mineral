@@ -16,6 +16,12 @@ BAND_ORDER: list[str] = [
     "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B9", "B11", "B12",
 ]
 
+# Subconjunto de bandas disponibles a 20 m que se usa para construir el Scene
+# de Nivel 1. En nombres canonicos SIN cero (mismo estilo que BAND_ORDER); el
+# mapeo a los tokens de archivo CON cero (B02, B03, B04) vive en el script que
+# arma el Scene, no aqui.
+COMMON_BANDS: list[str] = ["B2", "B3", "B4", "B8A", "B11", "B12"]
+
 
 @dataclass
 class Config:
