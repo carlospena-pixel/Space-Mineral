@@ -1,7 +1,305 @@
 # Decisiones técnicas
 
-Justificación de cada decisión técnica relevante del proyecto (elección de
-algoritmos, resolución de trabajo, manejo de nubes, fuente de las firmas
-espectrales, etc.).
+Este documento registra las decisiones de diseño ya tomadas e implementadas en
+el repositorio, con su justificación y con lo que se rompería si se revirtieran.
+Cada una referencia el archivo y la función donde vive.
 
-_Pendiente de completar a medida que avanza el proyecto._
+La restricción que ordena casi todo lo que sigue es que el proyecto escala por
+niveles —Nivel 1 (Spectral Angle Mapper), Nivel 2 (Random Forest), Nivel 3
+(unmixing)— y la arquitectura debe soportar los tres sin refactorizar.
+
+## 1. Contratos de interfaz
+
+Son las tres fronteras que separan los subsistemas. Mientras se respeten, cada
+subsistema puede reescribirse por dentro sin tocar a los otros.
+
+### 1.1 `Scene` — `src/mineralmap/io/raster_io.py`
+
+Objeto que produce `preprocessing/` y que consumen `spectral/` y `algorithms/`.
+No conoce formatos de archivo: es solo datos en memoria.
+
+| Campo        | Tipo         | Forma / contenido |
+|--------------|--------------|-------------------|
+| `cube`       | `np.ndarray` | `(n_bandas, alto, ancho)`, `float32`, reflectancia en `[0, 1]` o `NaN` |
+| `band_names` | `list[str]`  | Nombres canónicos, alineados **posicionalmente** con el eje 0 de `cube` |
+| `transform`  | `Affine`     | Georreferenciación del AOI recortado, no del tile completo |
+| `crs`        | `CRS`        | Sistema de referencia (EPSG:32719 en esta escena) |
+| `mask`       | `np.ndarray` | `(alto, ancho)`, `bool` |
+| `meta`       | `dict`       | Trazabilidad; por defecto `{}` |
+
+Tres convenciones que no son negociables:
+
+**`mask` es `True` donde el píxel es válido.** Es el complemento de una máscara
+de nubes, no la máscara de nubes. La función que la construye se llama
+`build_cloud_mask` por el contrato original del proyecto y esa discrepancia de
+nombre está advertida en su docstring. Invertir la convención rompería
+`apply_mask`, `build_scene_from_safe` y todos sus tests sin producir ningún
+error visible: simplemente se analizarían las nubes en vez del suelo.
+
+**El orden de `band_names` es posicional, no nominal.** `cube[i]` es la banda
+`band_names[i]`. Nadie busca bandas por nombre dentro del cubo salvo la
+visualización. Por eso `get_reference_spectrum` recibe un `band_order` y
+devuelve un vector alineado con él: el producto punto del SAM asume esa
+alineación y no tiene forma de verificarla.
+
+**`meta` es documentación, no configuración.** Nada del pipeline lee de `meta`
+para decidir qué hacer. Registra de dónde salió el cubo: `safe_name`,
+`tile_id`, `sensing_date`, `processing_baseline`, `boa_offset`,
+`quantification`, `aoi_window`, `bands_source` (banda → resolución nativa),
+`invalid_scl_classes`, `scl_summary` y `created_at`. Se serializa como JSON
+dentro del `.npz`, de modo que `load_scene` nunca necesita `allow_pickle=True`
+y abrir una escena no puede ejecutar código. Un `.npz` anterior a la existencia
+de `meta` se carga con `meta == {}` en vez de fallar.
+
+### 1.2 `Detector` — `src/mineralmap/algorithms/base.py`
+
+```python
+class Detector(ABC):
+    @abstractmethod
+    def predict(self, cube: np.ndarray, reference: np.ndarray) -> np.ndarray: ...
+```
+
+Recibe el cubo `(n_bandas, alto, ancho)` y la firma de referencia
+`(n_bandas,)`; devuelve un mapa de puntaje 2D `(alto, ancho)` donde a mayor
+valor, mayor evidencia de presencia del mineral.
+
+**Este es el mecanismo de escalabilidad del proyecto.** El pipeline no sabe qué
+algoritmo está corriendo: construye un `Detector` a partir del YAML del
+experimento (`algorithm.name`) y llama a `predict`. Pasar de Nivel 1 a Nivel 2
+es agregar una clase en `algorithms/` y una línea en un config, no reescribir
+el flujo. `SAM` (`algorithms/sam.py`) implementa el contrato hoy;
+`random_forest.py` y `unmixing.py` son andamiaje intencional que lo implementará
+después.
+
+La consecuencia incómoda, y aceptada: la firma `predict(cube, reference)` está
+pensada para métodos que comparan contra una firma. Un Random Forest entrenado
+con muestras etiquetadas no usa `reference` de la misma manera. Se resolverá
+cuando se implemente —probablemente ignorando el argumento o usándolo como
+semilla de las muestras positivas—, pero la firma se mantiene porque cambiarla
+obligaría a tocar el pipeline, que es justo lo que el contrato evita.
+
+### 1.3 `get_reference_spectrum` — `src/mineralmap/spectral/endmembers.py`
+
+```python
+def get_reference_spectrum(mineral: str, band_order: list[str] = BAND_ORDER) -> np.ndarray
+```
+
+Devuelve un vector 1D de largo `len(band_order)` con la reflectancia de
+referencia del mineral, alineado posicionalmente con `band_order`. Busca el
+archivo USGS splib07 registrado en `ENDMEMBERS` bajo `data/external/`, descarta
+B10 (que la librería trae pero el producto L2A no) y reordena los 12 valores
+restantes. Lanza `KeyError` si el mineral no está registrado.
+
+El punto de diseño es que **el consumidor fija el orden**. La librería USGS
+tiene su propio orden y el `Scene` tiene el suyo; que la conversión ocurra acá,
+en un solo lugar y con el orden pedido explícitamente, es lo que evita un
+desalineamiento silencioso entre el cubo y la firma.
+
+## 2. Bandas
+
+### `BAND_ORDER` — 12 bandas
+
+`src/mineralmap/config.py`. Es el contrato de bandas del proyecto:
+
+```
+B1, B2, B3, B4, B5, B6, B7, B8, B8A, B9, B11, B12
+```
+
+Nombres canónicos **sin cero a la izquierda**; los archivos `.jp2` del producto
+usan `B01`, `B08`, y la traducción vive en `BAND_TOKEN` (`io/raster_io.py`),
+generada programáticamente desde `BAND_ORDER` para que agregar una banda al
+contrato no exija mantener también un diccionario a mano.
+
+**No incluye B10** (cirrus, ~1375 nm) porque no existe en el producto L2A:
+Sen2Cor la descarta durante la corrección atmosférica, ya que solo sirve para
+detección de cirrus sobre el producto L1C. Incluirla haría fallar la
+construcción del `Scene` con un `FileNotFoundError` al buscar un archivo que el
+producto no trae.
+
+### `COMMON_BANDS` — 6 bandas, ya no es el default
+
+Subconjunto de bandas nativas a 20 m que se usó para el primer `Scene`. Dejó de
+ser el valor por defecto cuando el `Scene` pasó a 12 bandas: el roadmap de
+Track A pedía "resampleo de todas las bandas a 20 m", y `BAND_ORDER` es el
+contrato fijado en Semana 0. Se conserva como subconjunto documentado y sigue
+disponible en la CLI (`--bands common`).
+
+### `SAM_BANDS` — 9 bandas, declarado y todavía no consumido
+
+```
+B2, B3, B4, B5, B6, B7, B8A, B11, B12
+```
+
+Es el subconjunto que consumirá el detector espectral. Hoy **solo está
+declarado**: ningún módulo lo importa. La razón de declararlo antes de usarlo es
+dejar la decisión escrita y testeada mientras el pipeline no existe.
+
+Las tres exclusiones respecto de `BAND_ORDER`, por motivos distintos:
+
+- **B1** (443 nm, aerosol costero) existe para alimentar la corrección
+  atmosférica. Su varianza informa sobre el estado de la atmósfera, no sobre la
+  superficie.
+- **B9** (945 nm, absorción de vapor de agua) tiene el mismo problema, y además
+  es la única banda con resolución nativa de 60 m: es la de menor información
+  real por píxel de todo el cubo.
+- **B8** (833 nm, ancha) se solapa con **B8A** (865 nm, angosta), que cubre la
+  misma región con mejor definición espectral. Conservar ambas le daría peso
+  doble al infrarrojo cercano al calcular el ángulo espectral, que es una suma
+  sobre bandas y no pondera por redundancia.
+
+**El `Scene` sigue naciendo con las 12 bandas.** Subconjuntar después siempre se
+puede; recuperar una banda que nunca se leyó del disco, no. El costo de las tres
+bandas extra es memoria, y es barato comparado con volver a leer el producto.
+
+## 3. Zona de estudio
+
+| Parámetro | Valor |
+|-----------|-------|
+| Tile | `T19KDT` (Pampa del Tamarugal, Región de Tarapacá) |
+| Producto | `S2B_MSIL2A_20251231T144729_N0511_R139_T19KDT_20251231T200248.SAFE` |
+| CRS | EPSG:32719 (UTM 19S) |
+| Ventana AOI | `col_off=1000, row_off=1000, width=2000, height=2000`, en la grilla de 20 m |
+| Extensión | 40 × 40 km |
+| Bbox WGS84 | `[-69.7673, -20.4377, -69.383, -20.075]` |
+
+**La ventana en píxeles es la definición autoritativa; el bbox es informativo.**
+La ventana define un recorte exacto y reproducible sobre la grilla del tile,
+mientras que el bbox pasa por una reproyección y termina redondeado. Cuando se
+pasa un bbox a `build_scene_from_safe`, se reproyecta con `transform_bounds`,
+se convierte a ventana y se redondea con `round_offsets().round_lengths()`.
+Ambos valores conviven en `configs/tamarugal_kaolinite.yaml` con esa jerarquía
+anotada.
+
+**La zona cambió respecto del plan original.** El proyecto apuntaba al distrito
+de Chuquicamata (Calama, Región de Antofagasta); se movió a Pampa del Tamarugal
+por disponibilidad de datos. El config `chuqui_kaolinite.yaml` quedó obsoleto y
+fue renombrado a `tamarugal_kaolinite.yaml`. Solo hay una versión válida de este
+dato: cualquier mención a Chuquicamata como zona de estudio activa en otro
+archivo del repositorio es un residuo y debe corregirse.
+
+La escena está prácticamente despejada: 99,9977 % de píxeles válidos en el AOI,
+99,92 % clasificados como suelo desnudo. Es una condición deliberada —desierto
+absoluto, sin vegetación ni nubes— porque el objetivo es detectar una firma
+mineral en superficie y cualquier cobertura la enmascara.
+
+## 4. Máscara de validez
+
+`src/mineralmap/preprocessing/masking.py`.
+
+```python
+DEFAULT_INVALID_CLASSES = [0, 1, 2, 3, 6, 8, 9, 10, 11]
+```
+
+Se descartan: nodata (0), saturado o defectuoso (1), sombra topográfica (2),
+sombra de nube (3), agua (6), nube de probabilidad media (8), nube de
+probabilidad alta (9), cirrus fino (10) y nieve o hielo (11).
+
+Se conservan tres clases, cada una por su motivo:
+
+- **5, suelo desnudo** es justamente el objetivo. Es donde la firma del mineral
+  llega al sensor sin obstrucción.
+- **4, vegetación** no es un píxel inválido, solo poco informativo para un
+  mineral. Filtrarla es una decisión del algoritmo, no del preprocesamiento: el
+  preprocesamiento no debería descartar dato que un método posterior podría
+  querer usar —un Random Forest, por ejemplo, aprende del contraste—.
+- **7, no clasificado** es la clase "no sé" de Sen2Cor. Descartarla implicaría
+  confiar en su clasificación más de lo que corresponde sobre terreno árido,
+  donde equivoca seguido.
+
+El agua sí se descarta: su firma espectral no compite con la de un mineral y
+solo aporta falsos positivos.
+
+**La máscara no se aplica al cubo.** `build_scene_from_safe` entrega el cubo
+crudo y la validez por separado en `Scene.mask`. Quien decide enmascarar es el
+consumidor, no el constructor: un algoritmo puede querer estadísticas globales,
+otro puede necesitar el vecindario completo, y una vez que un píxel se
+convirtió en `NaN` no hay forma de recuperarlo sin releer el producto. El helper
+explícito para aplicarla es `apply_mask(cube, mask)`, que devuelve una copia con
+`NaN` en todas las bandas de los píxeles inválidos y valida las formas.
+
+La máscara final combina dos criterios: `mask_scl & ~np.isnan(cube).any(axis=0)`.
+El segundo término atrapa los bordes del tile, donde SCL puede decir "suelo"
+pero la banda no tiene señal.
+
+## 5. Remuestreo
+
+`src/mineralmap/preprocessing/resampling.py`.
+
+**El remuestreo ocurre en la lectura, no sobre un `Scene` ya armado.**
+`read_band_on_grid` traduce los límites del AOI a una ventana en la grilla
+nativa de cada banda y le pide a GDAL que la entregue directamente con la forma
+de la grilla destino. El `Scene` nace homogéneo a 20 m y nunca existe un cubo
+con bandas de resoluciones mezcladas. Remuestrear después sería interpolar dos
+veces, y cada interpolación degrada la radiometría.
+
+`resample_to_common_grid` queda como stub reservado para Nivel 2, cuando haya
+que combinar objetos `Scene` provenientes de grillas distintas y ya no se pueda
+resolver en la lectura.
+
+El método lo elige `resampling_for(src_res_m, target_res_m, categorical)`:
+
+| Caso | Método | Motivo | Banda en esta escena |
+|------|--------|--------|----------------------|
+| Categórico | `nearest` | Promediar etiquetas produce clases que no existen | SCL (R20m) |
+| Submuestreo 10 → 20 m | `average` | Promediar los 4 píxeles conserva mejor la radiometría que quedarse con uno | B8 (R10m) |
+| Sobremuestreo 60 → 20 m | `bilinear` | Interpolar suaviza el bloque en vez de replicarlo en escalones | B9 (R60m) |
+| Misma resolución | `nearest` | Es la identidad; interpolar por gusto solo agrega error | B1–B7, B8A, B11, B12 |
+
+El caso categórico es el importante: el promedio de "agua" y "nube" no es
+"vegetación", pero eso es exactamente lo que devolvería un `average` sobre
+etiquetas. Es un error clásico y caro porque no falla, solo entrega una máscara
+plausible y equivocada.
+
+**Premisa que hace válido todo esto**: dentro de un tile Sentinel-2 L2A, todas
+las bandas comparten CRS y origen de tile, y sus resoluciones son múltiplos
+exactos entre sí. Por eso alcanza con recortar por coordenadas y reescalar, sin
+`warp`. Lo que la rompería: combinar tiles distintos, fechas distintas u otro
+sensor. En ese caso habría que reproyectar de verdad. Para que la premisa no se
+viole en silencio, `read_band_on_grid` acepta un `expected_crs` y lanza
+`ValueError` si no coincide —recortar por coordenadas en el CRS equivocado no
+produce error, produce basura—.
+
+## 6. Reflectancia
+
+`src/mineralmap/preprocessing/reflectance.py`.
+
+```
+reflectancia = (DN + offset) / quantification
+```
+
+En esta escena: `offset = -1000`, `quantification = 10000`, baseline `05.11`.
+Los tres valores se **leen de `MTD_MSIL2A.xml`** (`read_l2a_scaling`), no se
+fijan en el código: dependen de con qué versión ESA procesó el producto, y una
+escena reprocesada puede cambiarlos sin que cambie nada más. El parseo ignora
+los namespaces XML comparando solo la última parte del tag, porque el namespace
+del PSD cambia entre versiones y anclarse a él rompe la lectura sin aviso. Si el
+XML falta, se cae al fallback `("04.00", -1000.0, 10000.0)` con un
+`warnings.warn` explícito.
+
+**Por qué existe el offset.** Hasta el baseline 03.xx, el producto guardaba
+`reflectancia × 10000`. Desde el baseline 04.00, Sen2Cor codifica las
+reflectancias con un desplazamiento: guarda `reflectancia × 10000 + 1000`. El
+desplazamiento permite representar reflectancias ligeramente negativas —un
+resultado normal de la corrección atmosférica sobre superficies muy oscuras—
+sin recurrir a enteros con signo. En el XML el valor aparece como
+`BOA_ADD_OFFSET = -1000`: es un sumando negativo, equivalente a restar 1000.
+Aplicar la fórmula antigua a un producto moderno da un error sistemático de
++0,1 en reflectancia, que sobre suelo árido es del orden del 40 % del valor
+real.
+
+**Por qué `DN == 0` pasa a `NaN`.** El 0 es el valor de "sin dato" del producto.
+Escalarlo lo convertiría en `-0.1`, que el clip dejaría en `0.0`: un valor
+perfectamente válido y perfectamente falso. Contamina toda estadística
+posterior —medias, percentiles, el realce de contraste de las figuras— sin dejar
+rastro. Por eso el nodata se identifica sobre los DN crudos, antes de escalar.
+
+**Qué hace y qué cuesta el clip.** Con `clip=True` (el default) el resultado se
+acota a `[0, 1]`. Lo que gana: las reflectancias fuera de ese rango son
+artefactos de la corrección atmosférica, no medidas, y arrastrarlas ensucia
+cualquier normalización posterior. Lo que cuesta: se pierde la información de
+cuán fuera de rango estaba un píxel, que es un diagnóstico útil de zonas donde
+Sen2Cor tuvo problemas. En el AOI actual el clip actúa sobre los píxeles más
+brillantes (el máximo del cubo es exactamente `1.0`). `np.clip` propaga los
+`NaN`, así que el nodata sobrevive al recorte; hay un test que lo verifica
+explícitamente porque es el tipo de detalle que una implementación alternativa
+rompería en silencio.

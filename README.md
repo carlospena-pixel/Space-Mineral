@@ -1,5 +1,7 @@
 # Spectral Mineral Mapping
 
+[![tests](https://github.com/carlospena-pixel/Space-Mineral/actions/workflows/tests.yml/badge.svg)](https://github.com/carlospena-pixel/Space-Mineral/actions/workflows/tests.yml)
+
 **ES** | [EN](#en)
 
 Detección de minerales de alteración hidrotermal (caolinita, alunita, hematita, ...) a
@@ -23,8 +25,8 @@ pip install -e ".[dev]"
 pre-commit install
 
 # Correr un experimento
-python scripts/run_pipeline.py configs/chuqui_kaolinite.yaml
-python scripts/evaluate.py data/processed/chuqui_kaolinite/score_map.tif data/external/sernageomin/...
+python scripts/run_pipeline.py configs/tamarugal_kaolinite.yaml
+python scripts/evaluate.py data/processed/tamarugal_kaolinite/score_map.tif data/external/sernageomin/...
 ```
 
 Los datos (`data/`) no se versionan; ver `docs/es/pipeline.md` para cómo obtenerlos.
@@ -51,6 +53,8 @@ _Pendiente: se completa a medida que corren los experimentos de cada nivel._
 <a id="en"></a>
 ## English
 
+[![tests](https://github.com/carlospena-pixel/Space-Mineral/actions/workflows/tests.yml/badge.svg)](https://github.com/carlospena-pixel/Space-Mineral/actions/workflows/tests.yml)
+
 Detection of hydrothermal alteration minerals (kaolinite, alunite, hematite, ...) from
 Sentinel-2 L2A imagery, matched against the USGS splib07 spectral library and
 validated against SERNAGEOMIN geological mapping.
@@ -69,7 +73,7 @@ conda activate mineralmap
 pip install -e ".[dev]"
 pre-commit install
 
-python scripts/run_pipeline.py configs/chuqui_kaolinite.yaml
+python scripts/run_pipeline.py configs/tamarugal_kaolinite.yaml
 ```
 
 `data/` is not versioned; see `docs/en/pipeline.md` for how to obtain it.

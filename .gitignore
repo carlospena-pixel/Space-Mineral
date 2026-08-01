@@ -40,6 +40,13 @@ outputs/*
 outputs/figures/*
 !outputs/figures/*.png
 
+# outputs/scratch/ es el destino de las salidas exploratorias: la carpeta
+# existe en el repo (via .gitkeep) para que los scripts puedan escribir ahi
+# sin crearla, pero nada de lo que se genere dentro se versiona.
+!outputs/scratch/
+outputs/scratch/*
+!outputs/scratch/.gitkeep
+
 # Jupyter
 .ipynb_checkpoints/
 

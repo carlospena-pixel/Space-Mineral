@@ -22,6 +22,16 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - `Scene.meta`: trazabilidad del producto de origen (tile, fecha, baseline,
   offset, ventana AOI, resolución nativa por banda y composición SCL del AOI),
   serializada como JSON en el `.npz`.
+- `SAM_BANDS` en `config.py`: declara las 9 bandas que consumirá el detector
+  espectral (excluye B1 y B9, atmosféricas, y B8, redundante con B8A). Solo
+  declarado, sin consumidores todavía; cubierto por `tests/test_config.py`.
+- `docs/es/decisiones_tecnicas.md` y `docs/en/technical_decisions.md`: contratos
+  de interfaz (`Scene`, `Detector`, `get_reference_spectrum`) y justificación de
+  las decisiones de bandas, zona de estudio, máscara, remuestreo y reflectancia.
+  Salda el entregable de documentación de Semana 0.
+- CI en `.github/workflows/tests.yml`: corre `pytest` en Ubuntu sobre Python
+  3.10 y 3.13 en cada push y pull request a `main`. Sin paso de lint hasta que
+  `pre-commit run --all-files` pase limpio. Badge de estado en el README.
 
 ### Changed
 - El `Scene` pasa de 6 a 12 bandas (`BAND_ORDER`); `COMMON_BANDS` se conserva
@@ -35,3 +45,9 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - `scripts/construir_scene.py` queda como CLI delgado (`argparse`); toda su
   lógica se movió al paquete.
 - Las figuras de `outputs/figures/` se versionan: son la evidencia de cada hito.
+- `outputs/figures/` queda reservada a entregables. Las salidas exploratorias
+  van a `outputs/scratch/`, que no se versiona;
+  `scripts/explorar_banda_b12.py` escribe ahí y `banda_12_reflectancia.png`
+  dejó de estar en el repositorio.
+- `README.md` apuntaba a `configs/chuqui_kaolinite.yaml`, renombrado en el
+  commit anterior; el quickstart usa ahora `configs/tamarugal_kaolinite.yaml`.

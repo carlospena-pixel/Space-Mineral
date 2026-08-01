@@ -22,6 +22,20 @@ BAND_ORDER: list[str] = [
 # arma el Scene, no aqui.
 COMMON_BANDS: list[str] = ["B2", "B3", "B4", "B8A", "B11", "B12"]
 
+# Subconjunto que consumira el detector espectral (SAM). El Scene sigue
+# naciendo con las 12 bandas de BAND_ORDER: subconjuntar despues siempre se
+# puede, recuperar una banda que nunca se leyo no. Se excluyen tres respecto
+# de BAND_ORDER, y por motivos distintos:
+#   - B1 (443 nm, aerosol costero): existe para la correccion atmosferica. Su
+#     varianza informa sobre el estado de la atmosfera, no sobre la superficie.
+#   - B9 (945 nm, vapor de agua): mismo argumento, y ademas es la unica banda
+#     con resolucion nativa de 60 m, o sea la de menor informacion real por
+#     pixel de todo el cubo.
+#   - B8 (833 nm, ancha): se solapa con B8A (865 nm, angosta), que cubre la
+#     misma region con mejor definicion espectral. Conservar ambas le daria
+#     peso doble al infrarrojo cercano al calcular el angulo espectral.
+SAM_BANDS: list[str] = ["B2", "B3", "B4", "B5", "B6", "B7", "B8A", "B11", "B12"]
+
 
 @dataclass
 class Config:

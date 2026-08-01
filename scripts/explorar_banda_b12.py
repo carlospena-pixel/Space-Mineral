@@ -1,5 +1,8 @@
 """Comprobacion visual de la banda B12 (SWIR) completa, en reflectancia.
 
+Script EXPLORATORIO: su salida no es un entregable y va a outputs/scratch/,
+que no se versiona (los entregables viven en outputs/figures/).
+
 No recorta al AOI ni arma un Scene: lee la banda entera del tile y la grafica,
 para verificar a ojo que la conversion DN -> reflectancia da valores sensatos.
 """
@@ -16,7 +19,7 @@ from mineralmap.io.raster_io import find_band_file, find_safe_dir
 from mineralmap.preprocessing.reflectance import dn_to_reflectance, read_l2a_scaling
 
 RUTA_DATOS = "data/raw/"
-OUTPUT_PATH = "outputs/figures/banda_12_reflectancia.png"
+OUTPUT_PATH = "outputs/scratch/banda_12_reflectancia.png"
 
 
 def explorar_banda_cientifica(ruta_base: str) -> None:

@@ -1,0 +1,48 @@
+# Corre la suite de tests en cada push y pull request sobre main.
+#
+# Sin paso de lint a proposito: hoy `pre-commit run --all-files` falla sobre
+# archivos que este workflow no deberia obligar a reformatear, y un badge rojo
+# desde el primer commit es peor que no tener badge. El paso de lint se agrega
+# cuando el repositorio pase `pre-commit run --all-files` limpio.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Sin fail-fast: si una version falla, interesa ver si la otra tambien.
+      fail-fast: false
+      matrix:
+        # Los dos extremos soportados: pyproject declara requires-python
+        # ">=3.10" y el entorno de desarrollo local corre 3.13.
+        python-version: ["3.10", "3.13"]
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Instalar el paquete y las dependencias de desarrollo
+        # rasterio y geopandas publican wheels en PyPI para Linux, asi que no
+        # hace falta conda ni compilar GDAL.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Correr los tests
+        # tests/test_scene_builder.py se omite: necesita la escena Sentinel-2
+        # en data/raw/, que no se versiona. Su skipif ya lo resuelve.
+        run: pytest -q
