@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from mineralmap.io.raster_io import Scene, load_scene
+from mineralmap.preprocessing.scene_builder import build_scene_from_safe
 
 RUTA_SCENE = "data/interim/scene.npz"
 RUTA_RAW = "data/raw/"
@@ -30,10 +31,7 @@ def _cargar_scene() -> Scene:
         return load_scene(RUTA_SCENE)
 
     print(f"No existe {RUTA_SCENE}; construyendo el Scene desde {RUTA_RAW}...")
-    # Import diferido: construir_scene es un script vecino, no un modulo del paquete.
-    from construir_scene import construir_scene_final
-
-    return construir_scene_final(RUTA_RAW)
+    return build_scene_from_safe(root=RUTA_RAW)
 
 
 def _banda(scene: Scene, nombre: str) -> np.ndarray:

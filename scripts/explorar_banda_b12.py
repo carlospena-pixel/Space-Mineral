@@ -1,48 +1,59 @@
+"""Comprobacion visual de la banda B12 (SWIR) completa, en reflectancia.
 
-import rasterio
-import matplotlib.pyplot as plt
-import glob
-import numpy as np
+No recorta al AOI ni arma un Scene: lee la banda entera del tile y la grafica,
+para verificar a ojo que la conversion DN -> reflectancia da valores sensatos.
+"""
+
+from __future__ import annotations
+
 import os
+import sys
 
-def explorar_banda_cientifica(ruta_base):
-    print("Buscando la banda científica B12 (SWIR) a 20m...")
-    
-    # ORDEN 1: Buscar específicamente la banda 12
-    archivos_b12 = glob.glob(f"{ruta_base}/**/*.SAFE/**/IMG_DATA/R20m/*_B12_20m.jp2", recursive=True)
+import matplotlib.pyplot as plt
+import rasterio
 
-    if not archivos_b12:
-        print("Error: No se encontró la banda B12. Revisa tu carpeta data/raw.")
-        return
+from mineralmap.io.raster_io import find_band_file, find_safe_dir
+from mineralmap.preprocessing.reflectance import dn_to_reflectance, read_l2a_scaling
 
-    archivo_b12 = archivos_b12[0]
-    print(f"Archivo encontrado: {os.path.basename(archivo_b12)}")
+RUTA_DATOS = "data/raw/"
+OUTPUT_PATH = "outputs/figures/banda_12_reflectancia.png"
 
-    # Leer la banda sola usando rasterio
-    with rasterio.open(archivo_b12) as src:
-        # Leemos toda la matriz de la banda 1 (la única capa que tiene este archivo)
-        banda_12_cruda = src.read(1)
 
-    print("ORDEN 3: Convertir valores a reflectancia pura...")
-    # Convertimos a float para no perder los decimales cruciales en la división
-    # Fórmula: (valor - 1000) / 10000
-    banda_12_reflectancia = (banda_12_cruda.astype(float) - 1000) / 10000.0
+def explorar_banda_cientifica(ruta_base: str) -> None:
+    """Grafica la banda B12 en reflectancia y guarda la figura en outputs/."""
+    safe_dir = find_safe_dir(ruta_base)
+    ruta_b12, resolucion = find_band_file(safe_dir, "B12")
+    print(f"Archivo encontrado: {os.path.basename(ruta_b12)} (R{resolucion}m)")
 
-    # Limpiamos anomalías (la reflectancia real se mide entre 0 y 1)
-    banda_12_reflectancia = np.clip(banda_12_reflectancia, 0, 1)
+    baseline, offset, quantification = read_l2a_scaling(safe_dir)
+    print(f"Escalado: baseline {baseline}, offset {offset}, /{quantification}")
 
-    # Generar el gráfico de comprobación
-    plt.figure(figsize=(8, 8))
-    # Usamos cmap='gray' porque una sola banda no tiene color, es intensidad de luz
-    plt.imshow(banda_12_reflectancia, cmap='gray')
-    plt.colorbar(label="Reflectancia (0.0 a 1.0)")
-    plt.title("Banda Científica B12 - Reflectancia Corregida")
-    plt.axis("off")
+    with rasterio.open(ruta_b12) as src:
+        banda_cruda = src.read(1)
 
-    # Guardar el resultado
-    plt.savefig("banda_12_reflectancia.png", dpi=100, bbox_inches="tight")
-    print("¡Éxito! Se guardó la comprobación visual como banda_12_reflectancia.png")
+    # Misma conversion que usa el Scene: nada de repetir la formula a mano.
+    banda_reflectancia = dn_to_reflectance(
+        banda_cruda,
+        baseline=baseline,
+        offset=offset,
+        quantification=quantification,
+    )
 
-# --- EJECUCIÓN PRINCIPAL ---
-RUTA_DATOS = "data/raw/" 
-explorar_banda_cientifica(RUTA_DATOS)
+    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    # cmap gris: una sola banda no tiene color, es intensidad de luz.
+    imagen = ax.imshow(banda_reflectancia, cmap="gray")
+    fig.colorbar(imagen, ax=ax, label="Reflectancia (0.0 a 1.0)")
+    ax.set_title("Banda B12 (SWIR) - reflectancia superficial")
+    ax.axis("off")
+    fig.savefig(OUTPUT_PATH, dpi=100, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Guardado: {OUTPUT_PATH}")
+
+
+if __name__ == "__main__":
+    try:
+        explorar_banda_cientifica(RUTA_DATOS)
+    except FileNotFoundError as e:
+        print(f"[ABORTADO] {e}")
+        sys.exit(1)

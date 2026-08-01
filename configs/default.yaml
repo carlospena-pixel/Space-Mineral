@@ -1,9 +1,12 @@
 # Parametros base compartidos por todos los experimentos.
-# Un experimento concreto hereda/sobreescribe estos valores (ver chuqui_kaolinite.yaml).
+# Un experimento concreto hereda/sobreescribe estos valores (ver
+# tamarugal_kaolinite.yaml).
 
 scene:
   path: data/raw/  # ruta a la escena Sentinel-2 L2A (.SAFE)
-  bands: [B02, B03, B04, B05, B06, B07, B08, B8A, B11, B12]
+  # Nombres canonicos SIN cero, identicos a BAND_ORDER (mineralmap/config.py).
+  # No incluye B10: Sen2Cor la descarta al generar el L2A.
+  bands: [B1, B2, B3, B4, B5, B6, B7, B8, B8A, B9, B11, B12]
 
 aoi:
   bbox: null  # [min_lon, min_lat, max_lon, max_lat]
@@ -11,7 +14,11 @@ aoi:
 preprocessing:
   target_resolution_m: 20
   cloud_mask: true
-  scl_classes_to_mask: [3, 8, 9, 10]  # sombra de nube, nube media/alta, cirrus
+  # Clases SCL descartadas: 0 nodata, 1 saturado, 2 sombra topografica,
+  # 3 sombra de nube, 6 agua, 8 nube prob. media, 9 nube prob. alta,
+  # 10 cirrus, 11 nieve/hielo. Se conservan 4 (vegetacion), 5 (suelo desnudo)
+  # y 7 (no clasificado).
+  scl_classes_to_mask: [0, 1, 2, 3, 6, 8, 9, 10, 11]
 
 mineral:
   target: null

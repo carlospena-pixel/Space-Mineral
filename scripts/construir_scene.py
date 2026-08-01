@@ -1,149 +1,108 @@
-"""Arma el Scene de Nivel 1 recortado al AOI y lo serializa a data/interim/.
+"""CLI: arma el Scene recortado al AOI y lo serializa a data/interim/.
 
-`construir_scene_final(ruta_base) -> Scene` puede importarse sin efectos
-secundarios: solo hace trabajo (y requiere la escena .SAFE) cuando se la llama.
-La ejecucion como script vive bajo `if __name__ == "__main__":`.
+Toda la logica vive en `mineralmap.preprocessing.scene_builder`; este archivo
+solo parsea argumentos, llama al paquete e imprime el resumen.
 """
 
-import glob
+from __future__ import annotations
+
+import argparse
 import os
 import sys
 
-import numpy as np
-import rasterio
-from rasterio.windows import Window
-
-from mineralmap.config import COMMON_BANDS
+from mineralmap.config import BAND_ORDER, COMMON_BANDS
 from mineralmap.io.raster_io import Scene, save_scene
-
-# --- Parametros del recorte AOI (columna/fila de inicio y tamano en pixeles a
-# 20 m). Cambiar aqui para mover o redimensionar la zona de estudio. ---
-AOI_COL_OFF = 1000
-AOI_ROW_OFF = 1000
-AOI_WIDTH = 2000
-AOI_HEIGHT = 2000
-
-# Escala DN -> reflectancia. El baseline de procesamiento >= 04.00 agrega un
-# offset de +1000 a los enteros del producto L2A: hay que restarlo antes de
-# dividir por 10000, y recortar a [0, 1].
-DN_OFFSET = 1000
-DN_SCALE = 10000.0
-
-# Clases SCL que marcamos como NO validas: 3=sombra de nube, 8=nube (prob.
-# media), 9=nube (prob. alta), 10=cirrus.
-SCL_INVALID = [3, 8, 9, 10]
-
-# Mapeo token de archivo (.jp2, CON cero) -> nombre canonico (SIN cero). Los
-# .jp2 se llaman B02/B03/B04 pero el Scene usa B2/B3/B4; B8A/B11/B12 no cambian.
-TOKEN_A_BANDA = {
-    "B02": "B2",
-    "B03": "B3",
-    "B04": "B4",
-    "B8A": "B8A",
-    "B11": "B11",
-    "B12": "B12",
-}
-# Reverso para iterar en el orden exacto de COMMON_BANDS (el cubo queda alineado
-# posicionalmente con COMMON_BANDS).
-BANDA_A_TOKEN = {banda: token for token, banda in TOKEN_A_BANDA.items()}
+from mineralmap.preprocessing.scene_builder import build_scene_from_safe
 
 RUTA_DATOS = "data/raw/"
 RUTA_SCENE = "data/interim/scene.npz"
 
-
-def _primer_archivo(patron: str, mensaje_faltante: str) -> str:
-    """Devuelve el primer archivo que casa `patron`; aborta si no hay ninguno."""
-    encontrados = glob.glob(patron, recursive=True)
-    if not encontrados:
-        raise FileNotFoundError(mensaje_faltante)
-    return encontrados[0]
+# Conjuntos de bandas ofrecidos por la CLI. "all" es el contrato del proyecto.
+CONJUNTOS_DE_BANDAS = {"all": BAND_ORDER, "common": COMMON_BANDS}
 
 
 def construir_scene_final(ruta_base: str) -> Scene:
-    """Construye el Scene de Nivel 1 (AOI recortada) desde la escena .SAFE.
+    """DEPRECADO: usa `build_scene_from_safe` directamente.
 
-    Lee las bandas de COMMON_BANDS a 20 m, las recorta al AOI, las pasa a
-    reflectancia y arma la mascara de validez desde SCL. Aborta con un mensaje
-    claro si falta la escena o alguna banda/SCL, en vez de reventar con
-    IndexError.
+    Se conserva solo por compatibilidad con codigo que ya importaba esta
+    funcion desde el script. Sera eliminada.
     """
-    print("--- Construyendo el objeto Scene ---")
-    base = ruta_base.rstrip("/\\")
+    return build_scene_from_safe(root=ruta_base)
 
-    # Abortar temprano si no hay ninguna carpeta .SAFE bajo la ruta base.
-    if not glob.glob(f"{base}/**/*.SAFE", recursive=True):
-        raise FileNotFoundError(
-            f"No encontre ninguna carpeta .SAFE en {ruta_base}; "
-            "¿esta descargada la escena?"
-        )
 
-    ventana_aoi = Window(
-        col_off=AOI_COL_OFF,
-        row_off=AOI_ROW_OFF,
-        width=AOI_WIDTH,
-        height=AOI_HEIGHT,
+def _parsear_argumentos() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--root",
+        default=RUTA_DATOS,
+        help="Directorio donde buscar la carpeta .SAFE (default: %(default)s)",
     )
-
-    capas = []
-    mi_crs = None
-    mi_transform = None
-
-    print("1. Leyendo bandas y extrayendo la georreferenciacion del recorte...")
-    for banda in COMMON_BANDS:
-        token = BANDA_A_TOKEN[banda]
-        patron = f"{base}/**/*.SAFE/**/IMG_DATA/R20m/*_{token}_20m.jp2"
-        ruta = _primer_archivo(
-            patron,
-            f"No encontre la banda {token} en {ruta_base}; "
-            "¿esta descargada la escena?",
-        )
-        with rasterio.open(ruta) as src:
-            if mi_crs is None:
-                mi_crs = src.crs
-                # Recalcula las coordenadas geograficas solo para el AOI.
-                mi_transform = src.window_transform(ventana_aoi)
-            dn = src.read(1, window=ventana_aoi)
-            reflectancia = (dn.astype(np.float32) - DN_OFFSET) / DN_SCALE
-            capas.append(np.clip(reflectancia, 0, 1))
-
-    # np.array sobre una lista de matrices 2D apila en forma (bandas, alto, ancho).
-    cubo = np.array(capas, dtype=np.float32)
-
-    print("2. Calculando la mascara de validez desde SCL...")
-    patron_scl = f"{base}/**/*.SAFE/**/IMG_DATA/R20m/*_SCL_20m.jp2"
-    ruta_scl = _primer_archivo(
-        patron_scl,
-        f"No encontre la banda SCL en {ruta_base}; ¿esta descargada la escena?",
+    parser.add_argument(
+        "--out",
+        default=RUTA_SCENE,
+        help="Ruta del .npz de salida (default: %(default)s)",
     )
-    with rasterio.open(ruta_scl) as src:
-        scl = src.read(1, window=ventana_aoi)
-        # True = pixel valido (suelo), False = nube/sombra/cirrus.
-        mascara = ~np.isin(scl, SCL_INVALID)
-
-    print("3. Empaquetando en el contrato Scene...")
-    return Scene(
-        cube=cubo,
-        band_names=list(COMMON_BANDS),
-        transform=mi_transform,
-        crs=mi_crs,
-        mask=mascara,
+    parser.add_argument(
+        "--bands",
+        choices=sorted(CONJUNTOS_DE_BANDAS),
+        default="all",
+        help="Conjunto de bandas: all = BAND_ORDER (12), common = COMMON_BANDS (6)",
     )
+    parser.add_argument(
+        "--aoi-bbox",
+        nargs=4,
+        type=float,
+        metavar=("MIN_LON", "MIN_LAT", "MAX_LON", "MAX_LAT"),
+        default=None,
+        help="AOI como bbox en WGS84; si se omite, se usa la ventana por defecto",
+    )
+    return parser.parse_args()
+
+
+def _imprimir_resumen(scene: Scene, ruta: str) -> None:
+    """Imprime forma, bandas, escalado, resolucion nativa y composicion SCL."""
+    meta = scene.meta
+    print("=" * 60)
+    print(f"Forma del cubo   : {scene.cube.shape}  ({scene.cube.dtype})")
+    print(f"band_names       : {scene.band_names}")
+    print(
+        f"Escalado         : baseline {meta.get('processing_baseline')}, "
+        f"offset {meta.get('boa_offset')}, "
+        f"quantification {meta.get('quantification')}"
+    )
+    print(f"AOI (col,row,w,h): {meta.get('aoi_window')}")
+
+    print("Resolucion nativa por banda:")
+    for banda, resolucion in meta.get("bands_source", {}).items():
+        print(f"  {banda:<4} -> {resolucion} m")
+
+    resumen_scl = dict(meta.get("scl_summary", {}))
+    pct_validos = resumen_scl.pop("pct_validos", 100.0 * float(scene.mask.mean()))
+    print(f"Pixeles validos  : {pct_validos:.4f} %  ({int(scene.mask.sum()):,} px)")
+    print("Composicion SCL del AOI:")
+    for clase, porcentaje in sorted(
+        resumen_scl.items(), key=lambda par: par[1], reverse=True
+    ):
+        print(f"  {clase:<22} {porcentaje:8.4f} %")
+
+    print(f"Scene guardado   : {ruta}")
+    print("=" * 60)
 
 
 def main() -> None:
     """Construye el Scene, lo guarda en disco e imprime un resumen."""
-    scene = construir_scene_final(RUTA_DATOS)
+    args = _parsear_argumentos()
 
-    os.makedirs(os.path.dirname(RUTA_SCENE), exist_ok=True)
-    save_scene(scene, RUTA_SCENE)
+    scene = build_scene_from_safe(
+        root=args.root,
+        band_names=CONJUNTOS_DE_BANDAS[args.bands],
+        aoi=tuple(args.aoi_bbox) if args.aoi_bbox else None,
+    )
 
-    n_validos = int(scene.mask.sum())
-    print("==================================================")
-    print(f"Forma del cubo  : {scene.cube.shape}")
-    print(f"band_names      : {scene.band_names}")
-    print(f"Pixeles validos : {n_validos:,} / {scene.mask.size:,}")
-    print(f"Scene guardado  : {RUTA_SCENE}")
-    print("==================================================")
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    save_scene(scene, args.out)
+
+    _imprimir_resumen(scene, args.out)
 
 
 if __name__ == "__main__":

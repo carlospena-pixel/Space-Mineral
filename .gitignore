@@ -5,7 +5,6 @@ data/*
 !data/external/
 data/external/*
 !data/external/*.txt
-outputs/
 
 # Python
 __pycache__/
@@ -29,6 +28,17 @@ env/
 # Salidas graficas y archivos comprimidos
 *.png
 *.zip
+
+# Salidas: no se versionan, con una excepcion deliberada. Las figuras de
+# outputs/figures/ SI van al repo porque son la evidencia de cada hito y el
+# equipo las necesita sin tener que descargar la escena ni recomputar nada.
+# Hay que negar carpeta por carpeta: si se ignorara `outputs/` completo, git
+# ni siquiera desciende al directorio y ninguna negacion interna funcionaria.
+# Esta despues de `*.png` a proposito: gana la ultima regla que casa.
+outputs/*
+!outputs/figures/
+outputs/figures/*
+!outputs/figures/*.png
 
 # Jupyter
 .ipynb_checkpoints/

@@ -1,0 +1,27 @@
+# Experimento concreto: Pampa del Tamarugal (Tarapaca), caolinita con SAM (Nivel 1).
+# La zona cambio respecto del plan original (Chuquicamata) por disponibilidad de
+# datos; el nombre "chuqui" de este archivo quedo obsoleto y se renombro.
+
+defaults: default.yaml
+
+scene:
+  path: data/raw/S2B_MSIL2A_20251231T144729_N0511_R139_T19KDT_20251231T200248.SAFE
+  tile: T19KDT
+
+aoi:
+  # Autoritativo: ventana en la grilla de 20 m del tile.
+  window_px: {col_off: 1000, row_off: 1000, width: 2000, height: 2000}
+  # Informativo (WGS84), derivado de la ventana anterior.
+  bbox: [-69.7673, -20.4377, -69.383, -20.075]
+
+mineral:
+  target: kaolinite
+  usgs_sample_id: KGa-1  # Kaolinite CM9, splib07
+
+algorithm:
+  name: sam
+  params:
+    angle_threshold_rad: 0.1
+
+output:
+  dir: data/processed/tamarugal_kaolinite/
