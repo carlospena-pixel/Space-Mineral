@@ -33,6 +33,27 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   de alineamiento la necesita. Verificadas contra SentiWiki (Copernicus), «S2
   Mission», tabla 3, derivada de las funciones de respuesta espectral de ESA
   (COPE-GSEG-EOPG-TN-15-0007).
+- `spectral/usgs_library.py`: `load_usgs_wavelengths()`, que lee el archivo de
+  longitudes de onda de splib07 (mismo formato ASCIIdata, mismo manejo de «no
+  dato») y las convierte de micrómetros a nanómetros en un solo lugar, con un
+  control de rango que denuncia un archivo que ya viniera en nanómetros.
+- `spectral/endmembers.py`: `validate_raw_band_order()`, que ancla
+  `_RAW_BAND_ORDER` —la única pieza que afirma qué banda es cada posición del
+  archivo USGS— comprobando el orden creciente de longitud de onda contra la
+  tabla de ESA y, si hay archivo de longitudes de onda, el desvío por banda.
+  Junto a `find_usgs_wavelengths_file()` y las constantes
+  `USGS_RESAMPLING_PLATFORM` y `DEFAULT_WAVELENGTH_TOLERANCE_NM`.
+  **Falta descargar** el archivo de longitudes de onda que acompaña a la firma
+  dentro del paquete `ASCIIdata_splib07*_rsSentinel2` de la USGS Spectral
+  Library Version 7 (<https://www.sciencebase.gov/catalog/item/5807a2a2e4b0841e59e3a18d>).
+  Su nombre exacto dentro del paquete no está confirmado, así que el buscador
+  trabaja por patrón (cualquier `.txt` de `data/external/` que mencione
+  «wavelength») en vez de fijar un nombre inventado. Mientras no esté, el test
+  que compara las λ del archivo contra la tabla de ESA queda en `skipif` y el
+  orden de `_RAW_BAND_ORDER` sigue anclado solo a evidencia física.
+- `tests/test_endmembers.py`: se cubre el fallo silencioso más caro del
+  proyecto — que pedir la firma con un `band_order` distinto del default
+  (p. ej. `SAM_BANDS`) reordene los valores en vez de reasignarlos.
 - `tests/test_config.py`: el orden creciente de longitud de onda de
   `BAND_ORDER` pasa de ser una verificación manual de Track B a ser un test, y
   se exige correspondencia en ambas direcciones entre `BAND_ORDER` y la tabla

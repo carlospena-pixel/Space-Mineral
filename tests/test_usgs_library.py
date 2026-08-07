@@ -3,7 +3,10 @@
 import numpy as np
 import pytest
 
-from mineralmap.spectral.usgs_library import load_usgs_rs_sentinel2
+from mineralmap.spectral.usgs_library import (
+    load_usgs_rs_sentinel2,
+    load_usgs_wavelengths,
+)
 
 
 def _escribir_archivo_usgs(path, valores):
@@ -47,3 +50,29 @@ def test_archivo_incompleto_lanza_error(tmp_path):
 
     with pytest.raises(ValueError):
         load_usgs_rs_sentinel2(str(archivo))
+
+
+def test_longitudes_de_onda_se_devuelven_en_nanometros(tmp_path):
+    """splib07 guarda micrometros; el proyecto trabaja en nm y la conversion
+    ocurre al leer, en un solo lugar."""
+    # Sinteticos y crecientes, cubriendo el rango de Sentinel-2 (0.44-2.24 um).
+    micrometros = [0.44 + 0.15 * i for i in range(13)]
+    archivo = tmp_path / "wavelengths.txt"
+    _escribir_archivo_usgs(archivo, micrometros)
+
+    lambdas = load_usgs_wavelengths(str(archivo))
+
+    assert lambdas.shape == (13,)
+    np.testing.assert_allclose(lambdas, np.array(micrometros) * 1000.0)
+
+
+def test_longitudes_de_onda_ya_en_nanometros_lanzan_error(tmp_path):
+    """Un archivo que ya viniera en nm daria valores del orden de 10^6 al
+    convertirlo. Sin el control de rango, el error no fallaria: produciria un
+    eje x absurdo y una validacion de alineamiento que rechaza todo."""
+    nanometros = [440.0 + 150.0 * i for i in range(13)]
+    archivo = tmp_path / "wavelengths_nm.txt"
+    _escribir_archivo_usgs(archivo, nanometros)
+
+    with pytest.raises(ValueError, match="rango plausible"):
+        load_usgs_wavelengths(str(archivo))
