@@ -1,4 +1,4 @@
-"""Entrypoint CLI: corre el pipeline completo a partir de un archivo de configuracion."""
+"""Entrypoint CLI: corre el pipeline completo desde un archivo de configuracion."""
 
 import argparse
 

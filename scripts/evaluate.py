@@ -6,7 +6,9 @@ import argparse
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("predicted", help="Ruta al mapa de salida (GeoTIFF)")
-    parser.add_argument("ground_truth", help="Ruta a la verdad de terreno (GeoTIFF/vector)")
+    parser.add_argument(
+        "ground_truth", help="Ruta a la verdad de terreno (GeoTIFF/vector)"
+    )
     parser.parse_args()
     raise NotImplementedError
 

@@ -11,7 +11,19 @@ from mineralmap.spectral.usgs_library import load_usgs_rs_sentinel2
 
 # Orden en que load_usgs_rs_sentinel2 devuelve las 13 bandas (incluye B10).
 _RAW_BAND_ORDER = [
-    "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B9", "B10", "B11", "B12",
+    "B1",
+    "B2",
+    "B3",
+    "B4",
+    "B5",
+    "B6",
+    "B7",
+    "B8",
+    "B8A",
+    "B9",
+    "B10",
+    "B11",
+    "B12",
 ]
 
 # Raiz del repositorio: src/mineralmap/spectral/endmembers.py -> repo_root.

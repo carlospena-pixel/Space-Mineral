@@ -1,4 +1,7 @@
-"""Entrypoint CLI: descarga una escena Sentinel-2 L2A (llama a mineralmap.io.acquisition)."""
+"""Entrypoint CLI: descarga una escena Sentinel-2 L2A.
+
+Toda la logica vive en `mineralmap.io.acquisition`.
+"""
 
 import argparse
 

@@ -1,9 +1,14 @@
-# Corre la suite de tests en cada push y pull request sobre main.
+# Corre la suite de tests y el lint en cada push y pull request sobre main.
 #
-# Sin paso de lint a proposito: hoy `pre-commit run --all-files` falla sobre
-# archivos que este workflow no deberia obligar a reformatear, y un badge rojo
-# desde el primer commit es peor que no tener badge. El paso de lint se agrega
-# cuando el repositorio pase `pre-commit run --all-files` limpio.
+# El paso de lint estuvo ausente a proposito hasta la Semana 2: el repositorio
+# no pasaba `pre-commit run --all-files` y un badge rojo desde el primer commit
+# es peor que no tener badge. La condicion para agregarlo era justamente que
+# pasara limpio, y ya pasa, asi que aqui esta.
+#
+# Va como job aparte y no como paso del job de tests por dos motivos: el
+# formato no depende de la version de Python, asi que correrlo en la matriz lo
+# ejecutaria dos veces para nada; y si el codigo esta mal formateado pero los
+# tests pasan, interesa ver las dos cosas por separado.
 name: tests
 
 on:
@@ -13,6 +18,28 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          # Una sola version: black, ruff e isort dan el mismo resultado en
+          # 3.10 y 3.13, y las versiones de las herramientas las fija
+          # .pre-commit-config.yaml, no el interprete.
+          python-version: "3.13"
+
+      - name: Correr pre-commit
+        # Los mismos hooks que corren en local (black, ruff, isort,
+        # nbstripout), con las mismas versiones fijadas en el config. El hook
+        # de nbstripout es el que garantiza que no entren salidas de notebook
+        # al repositorio: las figuras que son evidencia van a outputs/figures/.
+        uses: pre-commit/action@v3.0.1
+
   pytest:
     runs-on: ubuntu-latest
 

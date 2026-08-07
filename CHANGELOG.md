@@ -97,6 +97,14 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   `pre-commit run --all-files` pase limpio. Badge de estado en el README.
 
 ### Changed
+- CI: se agrega el job `lint`, que corre `pre-commit` (black, ruff, isort,
+  nbstripout) sobre todos los archivos. El workflow decía que el paso se
+  agregaría cuando `pre-commit run --all-files` pasara limpio; ya pasa. Va como
+  job aparte del de tests porque el formato no depende de la versión de Python.
+- Todo el repositorio pasa `pre-commit run --all-files`: `black` reformateó
+  cuatro archivos, `ruff` arregló tres errores y se acortaron a mano cinco
+  docstrings que excedían las 88 columnas. Los notebooks ganaron el campo `id`
+  por celda que exige nbformat 4.5+.
 - El `Scene` pasa de 6 a 12 bandas (`BAND_ORDER`); `COMMON_BANDS` se conserva
   como subconjunto documentado, ya no como valor por defecto.
 - Zona de estudio: de Chuquicamata a Pampa del Tamarugal (tile `T19KDT`), por
@@ -114,3 +122,8 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   dejó de estar en el repositorio.
 - `README.md` apuntaba a `configs/chuqui_kaolinite.yaml`, renombrado en el
   commit anterior; el quickstart usa ahora `configs/tamarugal_kaolinite.yaml`.
+
+### Removed
+- `construir_scene_final()` de `scripts/construir_scene.py`: estaba marcada
+  DEPRECADO y no la importaba nadie (verificado por búsqueda en todo el
+  repositorio). Su reemplazo es `build_scene_from_safe()` directamente.

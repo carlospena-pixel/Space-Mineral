@@ -13,7 +13,18 @@ import yaml
 # producto L2A: Sen2Cor la descarta durante la correccion atmosferica, ya
 # que solo sirve para deteccion de cirrus en L1C.
 BAND_ORDER: list[str] = [
-    "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B9", "B11", "B12",
+    "B1",
+    "B2",
+    "B3",
+    "B4",
+    "B5",
+    "B6",
+    "B7",
+    "B8",
+    "B8A",
+    "B9",
+    "B11",
+    "B12",
 ]
 
 # Subconjunto de bandas disponibles a 20 m que se usa para construir el Scene
@@ -170,7 +181,7 @@ class Config:
 
 
 def load_config(path: str | Path) -> Config:
-    """Lee un YAML de configuracion (con soporte de `defaults:`) y devuelve un Config."""
+    """Lee un YAML de configuracion (con `defaults:`) y devuelve un Config."""
     path = Path(path)
     with path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}

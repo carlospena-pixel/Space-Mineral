@@ -21,15 +21,6 @@ RUTA_SCENE = "data/interim/scene.npz"
 CONJUNTOS_DE_BANDAS = {"all": BAND_ORDER, "common": COMMON_BANDS}
 
 
-def construir_scene_final(ruta_base: str) -> Scene:
-    """DEPRECADO: usa `build_scene_from_safe` directamente.
-
-    Se conserva solo por compatibilidad con codigo que ya importaba esta
-    funcion desde el script. Sera eliminada.
-    """
-    return build_scene_from_safe(root=ruta_base)
-
-
 def _parsear_argumentos() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(

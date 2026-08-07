@@ -6,7 +6,7 @@ from mineralmap.algorithms.base import Detector
 
 
 class UnmixingDetector(Detector):
-    def fit(self, cube, reference) -> "UnmixingDetector":
+    def fit(self, cube, reference) -> UnmixingDetector:
         raise NotImplementedError
 
     def predict(self, cube):

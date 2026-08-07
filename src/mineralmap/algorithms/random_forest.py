@@ -6,7 +6,7 @@ from mineralmap.algorithms.base import Detector
 
 
 class RandomForestDetector(Detector):
-    def fit(self, cube, reference) -> "RandomForestDetector":
+    def fit(self, cube, reference) -> RandomForestDetector:
         raise NotImplementedError
 
     def predict(self, cube):

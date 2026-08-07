@@ -1,4 +1,4 @@
-"""Descarga de escenas Sentinel-2 L2A desde el Copernicus Data Space Ecosystem (CDSE)."""
+"""Descarga de escenas Sentinel-2 L2A desde el Copernicus Data Space (CDSE)."""
 
 
 def download_scene(scene_id: str, dest_dir: str) -> str:

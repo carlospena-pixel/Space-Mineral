@@ -28,7 +28,7 @@ def _leer_valores(path: str, n_esperados: int) -> np.ndarray:
     Es el formato comun de la libreria: primera linea de encabezado, y despues
     un numero por linea. Los "no dato" (muy negativos) se convierten a NaN.
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip()]
 
     _header, *data_lines = lines
