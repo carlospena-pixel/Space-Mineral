@@ -54,6 +54,20 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - `tests/test_endmembers.py`: se cubre el fallo silencioso más caro del
   proyecto — que pedir la firma con un `band_order` distinto del default
   (p. ej. `SAM_BANDS`) reordene los valores en vez de reasignarlos.
+- `notebooks/01_explore_sentinel2_scene.ipynb`: el hito de Semana 2. Carga la
+  escena sobre una submuestra de 256×256 px, la enmascara, la ubica con un RGB
+  y superpone la firma de dos píxeles a la de referencia con las 12 bandas
+  alineadas. Incluye la tabla de verificación de alineamiento
+  (`idx | banda | λ_S2B | ref_USGS | píxel`) con `assert`s que hacen fallar el
+  notebook si algo no cuadra. El píxel se elige con criterio explícito —el de
+  menor ángulo SAM del AOI, más el central como control—, no «uno cualquiera».
+  Corre completo con kernel reiniciado.
+- `outputs/figures/kaolinite_signature_vs_pixel.png`: la evidencia del hito.
+- `visualization/maps.py`: `percentile_stretch()` y `rgb_composite()`, extraídos
+  de `scripts/visualizar_rgb.py` para que el notebook y el script produzcan el
+  mismo RGB en vez de dos copias que pueden divergir sin verse mal. El realce
+  ahora ignora los NaN: con `np.percentile`, un solo píxel enmascarado dejaba
+  la imagen entera negra sin lanzar ningún error.
 - `visualization/spectra.py`: `plot_spectra()` implementado (era un stub), más
   `normalize_signature()`. Eje x en longitud de onda real, normalización L2 por
   defecto —que es lo que ve el SAM, invariante al albedo— y corte explícito de

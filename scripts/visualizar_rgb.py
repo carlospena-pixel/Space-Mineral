@@ -3,6 +3,10 @@
 Carga data/interim/scene.npz; si no existe, construye el Scene desde data/raw/.
 Toma B4/B3/B2 como Rojo/Verde/Azul, estira el contraste a los percentiles 2-98
 y guarda la figura en outputs/figures/scene_rgb.png.
+
+El realce y el armado del compuesto viven en `visualization/maps.py`: el
+notebook 01 necesita exactamente el mismo RGB, y dos copias de la logica
+pueden divergir sin que ninguna de las dos figuras se vea mal.
 """
 
 from __future__ import annotations
@@ -10,19 +14,14 @@ from __future__ import annotations
 import os
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 from mineralmap.io.raster_io import Scene, load_scene
 from mineralmap.preprocessing.scene_builder import build_scene_from_safe
+from mineralmap.visualization.maps import rgb_composite
 
 RUTA_SCENE = "data/interim/scene.npz"
 RUTA_RAW = "data/raw/"
 OUTPUT_PATH = "outputs/figures/scene_rgb.png"
-
-# Percentiles para el realce de contraste: se recorta a [P_LOW, P_HIGH] y se
-# reescala a [0, 1] para que la imagen no salga oscura.
-P_LOW = 2
-P_HIGH = 98
 
 
 def _cargar_scene() -> Scene:
@@ -34,34 +33,10 @@ def _cargar_scene() -> Scene:
     return build_scene_from_safe(root=RUTA_RAW)
 
 
-def _banda(scene: Scene, nombre: str) -> np.ndarray:
-    """Devuelve la capa del cubo cuyo nombre canonico es `nombre`."""
-    if nombre not in scene.band_names:
-        raise ValueError(
-            f"La banda {nombre} no esta en el Scene (band_names={scene.band_names})."
-        )
-    return scene.cube[scene.band_names.index(nombre)]
-
-
-def _realce_percentil(banda: np.ndarray) -> np.ndarray:
-    """Recorta a los percentiles [P_LOW, P_HIGH] y reescala a [0, 1]."""
-    lo, hi = np.percentile(banda, (P_LOW, P_HIGH))
-    if hi <= lo:
-        return np.zeros_like(banda)
-    return np.clip((banda - lo) / (hi - lo), 0, 1)
-
-
 def main() -> None:
     """Arma el RGB del AOI y lo guarda como PNG."""
     scene = _cargar_scene()
-
-    rgb = np.dstack(
-        [
-            _realce_percentil(_banda(scene, "B4")),  # Rojo
-            _realce_percentil(_banda(scene, "B3")),  # Verde
-            _realce_percentil(_banda(scene, "B2")),  # Azul
-        ]
-    )
+    rgb = rgb_composite(scene)
 
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     fig, ax = plt.subplots(figsize=(8, 8))
