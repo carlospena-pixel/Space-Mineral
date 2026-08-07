@@ -25,6 +25,18 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - `SAM_BANDS` en `config.py`: declara las 9 bandas que consumirá el detector
   espectral (excluye B1 y B9, atmosféricas, y B8, redundante con B8A). Solo
   declarado, sin consumidores todavía; cubierto por `tests/test_config.py`.
+- Longitudes de onda como dato del proyecto (Semana 2, Track B):
+  `BAND_WAVELENGTHS_NM`, `BAND_FWHM_NM` y el helper `band_wavelengths()` en
+  `config.py`, con tablas separadas para S2A y S2B y `DEFAULT_PLATFORM = "S2B"`
+  (la plataforma de la escena del proyecto). Incluyen B10 aunque `BAND_ORDER`
+  no la tenga, porque el archivo de la librería USGS sí la trae y la validación
+  de alineamiento la necesita. Verificadas contra SentiWiki (Copernicus), «S2
+  Mission», tabla 3, derivada de las funciones de respuesta espectral de ESA
+  (COPE-GSEG-EOPG-TN-15-0007).
+- `tests/test_config.py`: el orden creciente de longitud de onda de
+  `BAND_ORDER` pasa de ser una verificación manual de Track B a ser un test, y
+  se exige correspondencia en ambas direcciones entre `BAND_ORDER` y la tabla
+  de longitudes de onda.
 - `docs/es/decisiones_tecnicas.md` y `docs/en/technical_decisions.md`: contratos
   de interfaz (`Scene`, `Detector`, `get_reference_spectrum`) y justificación de
   las decisiones de bandas, zona de estudio, máscara, remuestreo y reflectancia.
