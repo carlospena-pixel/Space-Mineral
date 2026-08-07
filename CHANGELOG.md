@@ -95,6 +95,43 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - CI en `.github/workflows/tests.yml`: corre `pytest` en Ubuntu sobre Python
   3.10 y 3.13 en cada push y pull request a `main`. Sin paso de lint hasta que
   `pre-commit run --all-files` pase limpio. Badge de estado en el README.
+- `docs/es/pipeline.md` y `docs/en/pipeline.md`: el flujo real, etapa por etapa,
+  desde el `.SAFE` hasta el `Scene` (`find_safe_dir`/`find_band_file` →
+  `read_l2a_scaling` → `read_band_on_grid` → `dn_to_reflectance` →
+  `build_cloud_mask` → `Scene`), con qué entra, qué sale y cuál es la decisión
+  no obvia de cada una. Eran un placeholder desde Semana 0. La tabla de estado
+  marca como pendientes de Nivel 1 lo que no existe —adquisición automática,
+  orquestador, validación y visualización de resultados— para que el documento
+  no prometa lo que no hay; el detector SAM se documenta como implementado pero
+  sin nadie que lo corra. No duplica `decisiones_tecnicas.md`: cada decisión
+  enlaza a la sección que la justifica.
+- `scripts/visualizar_mascara.py`: CLI que produce la primera salida visual de
+  `preprocessing/masking.py`, el módulo con las decisiones menos evidentes de la
+  Semana 2 y el único que no se podía mirar. Relee la banda SCL del `.SAFE`
+  sobre la misma ventana del `Scene` —derivada de su `transform` y su forma, no
+  de `meta["aoi_window"]`, porque `meta` es documentación y no configuración— y
+  con el mismo `nearest` (`resampling_for(..., categorical=True)`) con que la
+  leyó el constructor.
+- `visualization/maps.py`: `scl_to_rgb()` y `plot_scl_classes()`, más las
+  constantes `SCL_COLORS` (la paleta con que Sen2Cor publica la Scene
+  Classification) y `UNKNOWN_SCL_COLOR`. El SCL se colorea a mano en vez de
+  dejarle un colormap a `imshow`: un colormap se escala a las clases presentes
+  en el recorte, así que la misma clase saldría de un color en este AOI y de
+  otro en el de al lado mientras la leyenda afirma que es la misma. La máscara
+  se dibuja con `vmin=0, vmax=1` explícitos por el mismo motivo: sin ellos, una
+  máscara sin un solo píxel inválido —el caso normal en este AOI— se dibuja
+  negra, que es justo lo contrario de lo que significa.
+- `outputs/figures/mascara_scl.png`: la evidencia de la máscara. A la izquierda
+  el SCL coloreado, con leyenda de las 6 clases presentes y su porcentaje; a la
+  derecha `Scene.mask`, con 99,9977 % de válidos y 92 píxeles descartados en el
+  título. Los 92 descartados son píxeles sueltos, no una región.
+- `tests/test_maps.py`: seis tests para las dos funciones nuevas. Cubren lo que
+  falla sin lanzar nada: que el color de una clase no dependa de qué otras
+  clases haya en el recorte, que un código fuera de `SCL_CLASSES` se pinte
+  aparte en vez de confundirse con una clase declarada, que la leyenda solo
+  nombre las clases presentes, que la máscara se dibuje con escala fija, que el
+  título reporte válidos y descartados, y que dibujar un SCL y una máscara de
+  formas distintas —dos ventanas distintas del tile— sea un error.
 
 ### Changed
 - CI: se agrega el job `lint`, que corre `pre-commit` (black, ruff, isort,
@@ -122,6 +159,17 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   dejó de estar en el repositorio.
 - `README.md` apuntaba a `configs/chuqui_kaolinite.yaml`, renombrado en el
   commit anterior; el quickstart usa ahora `configs/tamarugal_kaolinite.yaml`.
+- `README.md`: la sección «Resultados» (ES y EN) deja de ser un placeholder.
+  Documenta el AOI de 40 × 40 km sobre el tile `T19KDT`, el 99,92 % de suelo
+  desnudo y el 99,9977 % de píxeles válidos —3.999.908 de 4.000.000, o sea 92
+  descartados; las dos cifras salen de `Scene.meta["scl_summary"]`—, más una
+  línea por cada figura de `outputs/figures/` explicando qué muestra. La
+  detección de caolinita queda marcada como pendiente y sin cifras: el SAM está
+  implementado y testeado, pero no hay orquestador que lo corra sobre la escena
+  ni validación contra cartografía, así que no hay ningún resultado de
+  detección que reportar. De paso, el árbol de «Estructura» decía que
+  `outputs/` no se versiona, cuando `outputs/figures/*.png` sí lo hace desde el
+  commit que fijó esa excepción en `.gitignore`.
 
 ### Removed
 - `construir_scene_final()` de `scripts/construir_scene.py`: estaba marcada
