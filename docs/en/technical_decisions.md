@@ -125,6 +125,35 @@ the default when `Scene` moved to 12 bands: the Track A roadmap called for
 It survives as a documented subset and is still reachable from the CLI
 (`--bands common`).
 
+### `BAND_WAVELENGTHS_NM` and `BAND_FWHM_NM` — wavelength as project data
+
+`src/mineralmap/config.py`. Central wavelength and bandwidth (FWHM) for every
+band, in nanometres, with **one table per platform** and
+`DEFAULT_PLATFORM = "S2B"`, the platform that acquired this project's scene. The
+`band_wavelengths(band_order, platform)` helper returns them aligned
+positionally with the requested `band_order`, under the same contract as
+`get_reference_spectrum`: the consumer dictates the ordering.
+
+**Why there are two tables.** S2A and S2B are two satellites carrying two
+physical copies of the MSI instrument, and their filters did not come out of the
+factory identical. The largest divergence lands on exactly the band this project
+cares about: B12 is centred at 2202.4 nm on S2A and at 2185.7 nm on S2B, 16.7 nm
+apart. B12 is the band that samples kaolinite's Al–OH doublet (2160/2200 nm),
+where reflectance changes rapidly with wavelength. Using the S2A table on an S2B
+scene raises nothing: it shifts the band centre into the absorption feature and
+returns a plot and an alignment check that look right and are wrong.
+
+**B10 is included** even though `BAND_ORDER` excludes it. The L2A product does
+not ship it, but the USGS library file does, and validating the alignment of the
+reference signature needs to know where it falls.
+
+The values are verified against SentiWiki (Copernicus), "S2 Mission", table 3,
+derived from ESA's spectral response functions (COPE-GSEG-EOPG-TN-15-0007). The
+central wavelengths match the ones circulating in the project; some FWHM values
+do not (S2A's B8 appears as 106 nm in derived spreadsheets and as 118 nm in the
+source). The cited source wins. The discrepancy affects nothing implemented
+today: FWHM is declared pending `spectral/srf.py` and no module consumes it.
+
 ### `SAM_BANDS` — 9 bands, declared and not yet consumed
 
 ```
@@ -300,3 +329,85 @@ struggled. In the current AOI the clip engages on the brightest pixels (the
 cube's maximum is exactly `1.0`). `np.clip` propagates `NaN`, so no-data survives
 the clamp; there is an explicit test for this, because it is exactly the kind of
 detail an alternative implementation would break silently.
+
+## 7. Comparing signatures
+
+`src/mineralmap/visualization/spectra.py`.
+
+`plot_spectra` is the only way a human can see whether the cube and the
+reference signature are talking about the same band. Three decisions, each one
+because the alternative produces a plot that looks right and misleads.
+
+**The x axis is wavelength, not band index.** The index lies about distances:
+B8A (864 nm) and B11 (1610 nm) are 745 nm apart, B5 (704) and B6 (739) are 35 nm
+apart, yet on an index axis both steps measure the same. With the index, the
+slope of any segment means nothing — and slope is exactly what you read to
+recognise an absorption feature.
+
+**The default normalisation is L2.** SAM compares directions, not magnitudes: it
+is albedo-invariant by construction. Plotting at unit norm plots exactly what
+the algorithm sees. Without normalising, the laboratory kaolinite signature
+(AREF reflectance from the USGS library) and a real scene pixel (surface
+reflectance) sit apart by a large factor — of order 2 to 4 depending on the
+pixel — and the plot suggests a misalignment that does not exist. `NaN`s
+propagate rather than becoming zero: a `NaN` means "this band was not measured",
+whereas a zero means "this band measured zero reflectance", which is a different
+fact and also moves the normalisation factor.
+
+**There is an explicit gap where the sensor did not sample.** Between two
+consecutive bands of `band_order` that are not neighbours on the sensor, the
+line breaks. The concrete case is B9 (945 nm) and B11 (1610 nm): B10 does not
+exist in the L2A product, so joining them with a continuous line draws an
+interpolation across 665 nm with not a single measurement behind it.
+
+### Alignment verification: the result
+
+This is the Week 2 Track B deliverable, and it closed at three levels:
+
+1. **Against ESA's table, in a test that runs without data.** `BAND_ORDER` is in
+   increasing wavelength order, and the wavelength table is exactly `BAND_ORDER`
+   plus B10, checked in both directions (`tests/test_config.py`).
+   `validate_raw_band_order()` extends the same check to the 13 positions of the
+   USGS file (`tests/test_endmembers.py`).
+2. **Against the real scene**, in `tests/test_scene_builder.py`: the signature
+   requested with `band_order=scene.band_names` carries as many values as the
+   cube has bands, and subsetting the cube by index and requesting the signature
+   by name reach the same band. Those are two different paths to the same band
+   and nothing forces them to agree; if they diverged, SAM would compare B11's
+   reflectance against B12's reference value and return an impeccably computed,
+   meaningless map.
+3. **Visually**, in `notebooks/01_explore_sentinel2_scene.ipynb`: an
+   `idx | band | λ | ref_USGS | pixel` table followed by `assert`s, plus the
+   figure `outputs/figures/kaolinite_signature_vs_pixel.png`.
+
+**What is still missing to close it fully.** The ordering of `_RAW_BAND_ORDER` —
+which band each position of the splib07 file is — remains anchored to physical
+evidence rather than to the source: position 10 shows an isolated dip that can
+only be the ~1400 nm OH overtone sampled by B10. The wavelength file from the
+`ASCIIdata_splib07*_rsSentinel2` package is not in `data/external/`; until it
+is, the test that consumes it stays under `skipif`. The same applies to
+`USGS_RESAMPLING_PLATFORM = "S2A"`, which is declared but unverified.
+
+### The config threshold would detect nothing
+
+Measured over a 256×256 px window of the AOI, on the masked cube (100 % valid
+pixels, all bare soil):
+
+| bands | min | median | max | below threshold 0.1 |
+|-------|-----|--------|-----|---------------------|
+| `SAM_BANDS` (9)   | 0.164 | 0.250 | 0.453 | 0 of 65,536 |
+| `BAND_ORDER` (12) | 0.166 | 0.247 | 0.426 | 0 of 65,536 |
+
+`configs/tamarugal_kaolinite.yaml` sets `angle_threshold_rad: 0.1`. **Not one
+pixel would fall below it.** The value is deliberately left untouched here: it
+has to be replaced with a calibration criterion, not with another number picked
+by eye. The notebook figure explains why no reasonable threshold would find
+kaolinite in this window: the reference plunges from B11 to B12 through the
+Al–OH absorption and neither pixel follows it.
+
+The two distributions are practically identical, which is what one expects and
+not an argument for either. Dropping B1, B8 and B9 does not change the result
+over clear desert because there all three contribute little useful variance. The
+reason to prefer 9 remains the one in section 2, not performance; what this
+number adds is that the trim **costs nothing**, which is what had to be checked
+before fixing it.

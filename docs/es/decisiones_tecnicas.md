@@ -124,6 +124,37 @@ Track A pedía "resampleo de todas las bandas a 20 m", y `BAND_ORDER` es el
 contrato fijado en Semana 0. Se conserva como subconjunto documentado y sigue
 disponible en la CLI (`--bands common`).
 
+### `BAND_WAVELENGTHS_NM` y `BAND_FWHM_NM` — la longitud de onda es un dato
+
+`src/mineralmap/config.py`. Longitud de onda central y ancho de banda (FWHM) de
+cada banda, en nanómetros, con **una tabla por plataforma** y
+`DEFAULT_PLATFORM = "S2B"`, que es la de la escena del proyecto. El helper
+`band_wavelengths(band_order, platform)` las devuelve alineadas posicionalmente
+con el `band_order` pedido, con el mismo contrato que
+`get_reference_spectrum`: el consumidor fija el orden.
+
+**Por qué hay dos tablas.** S2A y S2B son dos satélites con dos copias físicas
+del instrumento MSI, y sus filtros no salieron idénticos de fábrica. La
+divergencia más grande cae justo en la banda que le importa a este proyecto:
+B12 está centrada en 2202,4 nm en S2A y en 2185,7 nm en S2B, 16,7 nm de
+diferencia. B12 es la que muestrea el doblete Al–OH de la caolinita
+(2160/2200 nm), donde la reflectancia cambia rápido con la longitud de onda.
+Usar la tabla de S2A sobre una escena S2B no lanza ningún error: corre el
+centro de la banda dentro del rasgo de absorción y devuelve un gráfico y una
+validación de alineamiento que se ven bien y están mal.
+
+**Incluye B10** aunque `BAND_ORDER` no la tenga. El producto L2A no la trae,
+pero el archivo de la librería USGS sí, y la validación del alineamiento de la
+firma de referencia necesita saber dónde cae.
+
+Los valores están verificados contra SentiWiki (Copernicus), «S2 Mission»,
+tabla 3, derivada de las funciones de respuesta espectral de ESA
+(COPE-GSEG-EOPG-TN-15-0007). Las longitudes de onda centrales coinciden con las
+que circulan en el proyecto; algunos FWHM no (B8 de S2A aparece como 106 nm en
+planillas derivadas y como 118 nm en la fuente). Manda la fuente citada. La
+discrepancia no afecta a nada implementado hoy: el FWHM se declara a la espera
+de `spectral/srf.py` y ningún módulo lo consume.
+
 ### `SAM_BANDS` — 9 bandas, declarado y todavía no consumido
 
 ```
@@ -303,3 +334,86 @@ brillantes (el máximo del cubo es exactamente `1.0`). `np.clip` propaga los
 `NaN`, así que el nodata sobrevive al recorte; hay un test que lo verifica
 explícitamente porque es el tipo de detalle que una implementación alternativa
 rompería en silencio.
+
+## 7. Comparación de firmas
+
+`src/mineralmap/visualization/spectra.py`.
+
+`plot_spectra` es la única forma en que un humano puede ver si el cubo y la
+firma de referencia están hablando de la misma banda. Tres decisiones, cada una
+porque la alternativa produce un gráfico que se ve bien y engaña.
+
+**El eje x es la longitud de onda, no el índice de banda.** El índice miente
+sobre las distancias: entre B8A (864 nm) y B11 (1610 nm) hay 745 nm, y entre B5
+(704) y B6 (739) hay 35, pero en un eje por índice ambos saltos miden lo mismo.
+Con el índice, la pendiente de cualquier tramo del gráfico no significa nada, y
+la pendiente es justo lo que se lee para reconocer un rasgo de absorción.
+
+**La normalización por defecto es L2.** El SAM compara direcciones, no
+magnitudes: es invariante al albedo por construcción. Graficar en norma
+unitaria es graficar exactamente lo que el algoritmo ve. Sin normalizar, la
+firma de laboratorio de la caolinita (reflectancia AREF de la librería USGS) y
+un píxel real de la escena (reflectancia superficial) quedan separados por un
+factor grande —del orden de 2 a 4 según el píxel— y el gráfico sugiere un
+desalineamiento que no existe. Los `NaN` se propagan en vez de convertirse en
+cero: un `NaN` es «esta banda no se midió», y un cero es «esta banda midió
+reflectancia nula», que es otro dato y que además mueve el factor de
+normalización.
+
+**Hay hueco explícito donde el sensor no muestreó.** Entre dos bandas
+consecutivas del `band_order` que no son vecinas en el sensor, la línea se
+corta. El caso concreto es B9 (945 nm) y B11 (1610 nm): B10 no existe en el
+producto L2A, y unirlas con una recta continua dibuja una interpolación a lo
+largo de 665 nm donde no hay ni una sola medición.
+
+### Resultado de la verificación de alineamiento
+
+Es el entregable de Track B de la Semana 2, y quedó cerrado en tres niveles:
+
+1. **Contra la tabla de ESA, en un test que corre sin datos.** `BAND_ORDER`
+   está en orden creciente de longitud de onda, y la tabla de longitudes de
+   onda es exactamente `BAND_ORDER` más B10, comprobado en las dos direcciones
+   (`tests/test_config.py`). `validate_raw_band_order()` extiende lo mismo a
+   las 13 posiciones del archivo USGS (`tests/test_endmembers.py`).
+2. **Contra la escena real**, en `tests/test_scene_builder.py`: la firma pedida
+   con `band_order=scene.band_names` trae tantos valores como bandas tiene el
+   cubo, y subconjuntar el cubo por índice y pedir la firma por nombre llegan a
+   la misma banda. Son dos caminos distintos hacia la misma banda y nada los
+   obliga a coincidir; si divergieran, el SAM compararía la reflectancia de B11
+   contra el valor de referencia de B12 y devolvería un mapa impecablemente
+   calculado y sin sentido.
+3. **A la vista**, en `notebooks/01_explore_sentinel2_scene.ipynb`: tabla
+   `idx | banda | λ | ref_USGS | píxel` seguida de `assert`s, y la figura
+   `outputs/figures/kaolinite_signature_vs_pixel.png`.
+
+**Lo que falta para cerrarlo del todo.** El orden de `_RAW_BAND_ORDER` —qué
+banda es cada posición del archivo de splib07— sigue anclado a evidencia física
+y no a la fuente: la posición 10 tiene una caída aislada que solo puede ser el
+sobretono OH de ~1400 nm que muestrea B10. El archivo de longitudes de onda del
+paquete `ASCIIdata_splib07*_rsSentinel2` no está en `data/external/`; mientras
+no esté, el test que lo consume queda en `skipif`. Lo mismo vale para
+`USGS_RESAMPLING_PLATFORM = "S2A"`, que está declarado sin verificar.
+
+### El umbral del config no detectaría nada
+
+Medido sobre una ventana de 256×256 px del AOI, con el cubo enmascarado
+(100 % de píxeles válidos, todos suelo desnudo):
+
+| bandas | mín | mediana | máx | bajo umbral 0,1 |
+|--------|-----|---------|-----|-----------------|
+| `SAM_BANDS` (9)   | 0,164 | 0,250 | 0,453 | 0 de 65 536 |
+| `BAND_ORDER` (12) | 0,166 | 0,247 | 0,426 | 0 de 65 536 |
+
+`configs/tamarugal_kaolinite.yaml` fija `angle_threshold_rad: 0.1`. **Ni un
+solo píxel quedaría bajo ese umbral.** El valor no se cambia en este trabajo a
+propósito: hay que reemplazarlo con un criterio de calibración, no con otro
+número elegido a ojo. La figura del notebook explica por qué ningún umbral
+razonable encontraría caolinita en esta ventana: la referencia cae en picada de
+B11 a B12 por la absorción Al–OH y ninguno de los píxeles la acompaña.
+
+Las dos distribuciones son prácticamente la misma, que es lo esperado y no un
+argumento a favor de ninguna. Quitar B1, B8 y B9 no cambia el resultado sobre
+desierto despejado porque ahí las tres aportan poca varianza útil. La razón
+para preferir 9 sigue siendo la de la sección 2, no el rendimiento; lo que este
+número aporta es que el recorte **no cuesta nada**, que es lo que había que
+comprobar antes de fijarlo.
