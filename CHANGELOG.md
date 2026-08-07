@@ -54,6 +54,14 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - `tests/test_endmembers.py`: se cubre el fallo silencioso más caro del
   proyecto — que pedir la firma con un `band_order` distinto del default
   (p. ej. `SAM_BANDS`) reordene los valores en vez de reasignarlos.
+- `visualization/spectra.py`: `plot_spectra()` implementado (era un stub), más
+  `normalize_signature()`. Eje x en longitud de onda real, normalización L2 por
+  defecto —que es lo que ve el SAM, invariante al albedo— y corte explícito de
+  la línea donde el sensor no muestreó (B9 → B11, con B10 ausente del L2A).
+  Los NaN se propagan en vez de convertirse en cero.
+- `tests/test_spectra.py`: cubre las tres decisiones anteriores sin depender de
+  la escena, incluida la propiedad que hace útil el gráfico —dos firmas
+  proporcionales quedan superpuestas con normalización L2—.
 - `tests/test_config.py`: el orden creciente de longitud de onda de
   `BAND_ORDER` pasa de ser una verificación manual de Track B a ser un test, y
   se exige correspondencia en ambas direcciones entre `BAND_ORDER` y la tabla
