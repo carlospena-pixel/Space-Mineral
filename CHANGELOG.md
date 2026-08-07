@@ -76,6 +76,14 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - `tests/test_spectra.py`: cubre las tres decisiones anteriores sin depender de
   la escena, incluida la propiedad que hace útil el gráfico —dos firmas
   proporcionales quedan superpuestas con normalización L2—.
+- `tests/test_scene_builder.py`: tres tests que blindan la frontera entre
+  `preprocessing` y `spectral` sobre la escena real —que la firma pedida con
+  `band_order=scene.band_names` traiga tantos valores como bandas el cubo, que
+  `apply_mask` no deje el AOI entero en NaN ni mute el cubo original, y que
+  subconjuntar el cubo por índice y pedir la firma por nombre lleguen a la
+  misma banda—. Siguen bajo el `skipif` que ya tenía el archivo.
+- `tests/test_maps.py`: cubre el realce por percentiles y el compuesto RGB sin
+  depender de la escena.
 - `tests/test_config.py`: el orden creciente de longitud de onda de
   `BAND_ORDER` pasa de ser una verificación manual de Track B a ser un test, y
   se exige correspondencia en ambas direcciones entre `BAND_ORDER` y la tabla

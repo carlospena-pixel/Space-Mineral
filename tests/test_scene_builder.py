@@ -10,9 +10,11 @@ import numpy as np
 import pytest
 from rasterio.windows import Window
 
-from mineralmap.config import BAND_ORDER
+from mineralmap.config import BAND_ORDER, SAM_BANDS
 from mineralmap.io.raster_io import find_band_file, find_safe_dir
+from mineralmap.preprocessing.masking import apply_mask
 from mineralmap.preprocessing.scene_builder import build_scene_from_safe
+from mineralmap.spectral.endmembers import get_reference_spectrum
 
 pytestmark = pytest.mark.skipif(
     not glob.glob("data/raw/**/*.SAFE", recursive=True),
@@ -70,3 +72,70 @@ def test_todas_las_bandas_traen_senal_en_rango(scene):
         assert finitos.min() >= 0.0, f"{banda} tiene reflectancia negativa"
         assert finitos.max() <= 1.0, f"{banda} tiene reflectancia > 1"
         assert np.any(finitos > 0.0), f"{banda} es constante cero"
+
+
+def test_la_firma_de_referencia_calza_con_el_cubo_real(scene):
+    """El cubo y la firma tienen que traer el mismo numero de bandas.
+
+    Es la frontera entre `preprocessing` y `spectral`, y es la que el SAM
+    asume sin poder comprobarla: `np.einsum("bhw,b->hw", cube, reference)`
+    exige que los dos ejes `b` sean el mismo. Si no lo fueran, numpy si
+    fallaria, pero recien al calcular; lo que este test protege es que el
+    contrato se compruebe aqui, sobre el producto real y no sobre BAND_ORDER
+    escrito a mano.
+    """
+    firma = get_reference_spectrum("kaolinite", band_order=scene.band_names)
+
+    assert scene.band_names == BAND_ORDER
+    assert firma.shape == (scene.cube.shape[0],)
+    assert np.all(np.isfinite(firma))
+
+
+def test_apply_mask_sobre_el_cubo_real_no_borra_el_aoi_ni_lo_muta(scene):
+    """Enmascarar no puede dejar el AOI entero en NaN, y no toca el original.
+
+    Los dos modos de fallar son opuestos y ninguno lanza excepcion. Una
+    mascara invertida (la convencion es True = valido, no True = nube) dejaria
+    el AOI completo en NaN sobre este desierto despejado. Y si `apply_mask`
+    trabajara in place, el `Scene` perderia el cubo crudo para siempre: un
+    pixel que paso a NaN no se recupera sin releer el producto.
+    """
+    nan_originales = int(np.isnan(scene.cube).sum())
+
+    enmascarado = apply_mask(scene.cube, scene.mask)
+
+    assert enmascarado is not scene.cube
+    assert int(np.isnan(scene.cube).sum()) == nan_originales
+
+    validos = np.isfinite(enmascarado).all(axis=0)
+    assert validos.any(), "apply_mask dejo el AOI entero en NaN"
+    # Este AOI es desierto despejado: la mascara no deberia quitar casi nada.
+    assert validos.sum() == int(scene.mask.sum())
+
+
+def test_el_subconjunto_sam_bands_del_cubo_sigue_alineado_con_su_firma(scene):
+    """Subconjuntar el cubo por indice y pedir la firma por nombre coinciden.
+
+    Es el paso que va a dar el detector cuando pase a consumir SAM_BANDS: el
+    cubo se recorta por indices posicionales y la firma se pide por nombres.
+    Son dos caminos distintos hacia la misma banda, y nada los obliga a
+    coincidir. Si divergieran, el SAM compararia la reflectancia de B11 contra
+    el valor de referencia de B12 y devolveria un mapa perfectamente calculado
+    y sin sentido.
+    """
+    indices = [scene.band_names.index(banda) for banda in SAM_BANDS]
+    cubo_sam = scene.cube[indices]
+    firma_sam = get_reference_spectrum("kaolinite", band_order=SAM_BANDS)
+    firma_completa = get_reference_spectrum("kaolinite", band_order=scene.band_names)
+
+    assert cubo_sam.shape == (len(SAM_BANDS),) + scene.cube.shape[1:]
+    assert firma_sam.shape == (len(SAM_BANDS),)
+
+    for posicion, banda in enumerate(SAM_BANDS):
+        indice_original = scene.band_names.index(banda)
+        # La capa del subconjunto es exactamente la del cubo completo...
+        np.testing.assert_array_equal(
+            cubo_sam[posicion], scene.cube[indice_original], err_msg=banda
+        )
+        # ...y el valor de la firma en esa misma posicion, tambien.
+        assert firma_sam[posicion] == firma_completa[indice_original], banda
