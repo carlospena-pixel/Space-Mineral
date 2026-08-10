@@ -9,9 +9,11 @@ import json
 import os
 import warnings
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+import rasterio
 from affine import Affine
 from rasterio.crs import CRS
 
@@ -158,8 +160,97 @@ def read_scene(path: str) -> Scene:
     raise NotImplementedError
 
 
-def write_geotiff(path: str, array: np.ndarray, scene: Scene) -> None:
-    raise NotImplementedError
+def write_geotiff(
+    path: str,
+    array: np.ndarray,
+    scene: Scene,
+    band_descriptions: list[str] | None = None,
+) -> None:
+    """Escribe un arreglo como GeoTIFF con la georreferenciacion de `scene`.
+
+    Parameters
+    ----------
+    path:
+        Ruta del .tif de salida. El directorio padre se crea si no existe.
+    array:
+        Mapa 2D `(alto, ancho)` o cubo 3D `(n_bandas, alto, ancho)`. Se escribe
+        siempre como float32: la reflectancia y los puntajes del proyecto viven
+        en ese dtype y float64 duplicaria el peso sin agregar precision real.
+    scene:
+        Scene del que salieron los datos. Aporta `crs` y `transform`, y su
+        forma espacial es la referencia contra la que se valida `array`.
+    band_descriptions:
+        Un nombre por banda escrita, en el mismo orden. None deja las bandas
+        sin descripcion. Un raster de una banda que no dice que es obliga a
+        leer el codigo que lo produjo para saberlo.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        Si `array` no es 2D ni 3D, si su forma espacial no calza con la de
+        `scene.cube`, o si `band_descriptions` no trae un nombre por banda.
+    """
+    datos = np.asarray(array)
+
+    if datos.ndim == 2:
+        datos = datos[np.newaxis, ...]
+    elif datos.ndim != 3:
+        raise ValueError(
+            f"write_geotiff acepta un mapa 2D (alto, ancho) o un cubo 3D "
+            f"(n_bandas, alto, ancho); recibi {datos.ndim} dimensiones con "
+            f"forma {np.asarray(array).shape}."
+        )
+
+    # Sin esta comprobacion, escribir un mapa calculado sobre otra ventana
+    # produce un GeoTIFF impecable con la georreferenciacion equivocada: se
+    # abre bien en cualquier SIG, cae sobre el terreno equivocado y no falla
+    # nunca. Es el unico modo de fallo de esta funcion que no se nota.
+    forma_escena = tuple(scene.cube.shape[1:])
+    if tuple(datos.shape[1:]) != forma_escena:
+        raise ValueError(
+            f"La forma espacial del arreglo {tuple(datos.shape[1:])} no calza "
+            f"con la del Scene {forma_escena}; escribirlo igual daria un "
+            f"GeoTIFF georreferenciado sobre otra ventana."
+        )
+
+    if band_descriptions is not None and len(band_descriptions) != datos.shape[0]:
+        raise ValueError(
+            f"Recibi {len(band_descriptions)} descripciones para "
+            f"{datos.shape[0]} bandas; se necesita una por banda."
+        )
+
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+    # No se escribe ningun tag propio (fecha, usuario, ruta de origen): el
+    # archivo tiene que salir byte a byte identico en dos corridas seguidas
+    # para que la reproducibilidad se pueda comprobar comparando hashes. La
+    # trazabilidad del producto ya viaja en `Scene.meta` y en el .npz.
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=datos.shape[1],
+        width=datos.shape[2],
+        count=datos.shape[0],
+        dtype="float32",
+        crs=scene.crs,
+        transform=scene.transform,
+        # NaN como nodata y no 0: un angulo espectral de 0 rad es un valor
+        # legitimo (coincidencia perfecta con la firma), asi que usarlo como
+        # centinela borraria justo las detecciones mas fuertes.
+        nodata=np.nan,
+        compress="deflate",
+        tiled=True,
+    ) as dst:
+        dst.write(datos.astype(np.float32))
+
+        if band_descriptions is not None:
+            for indice, nombre in enumerate(band_descriptions, start=1):
+                dst.set_band_description(indice, nombre)
 
 
 def save_scene(scene: Scene, path: str) -> None:
