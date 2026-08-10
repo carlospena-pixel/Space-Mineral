@@ -17,14 +17,15 @@ repeated.
 | 5 | Build the validity mask | `preprocessing/masking.py` | Implemented |
 | 6 | Hand back and serialise the `Scene` | `preprocessing/scene_builder.py`, `io/raster_io.py` | Implemented |
 | 7 | Reference signature and visual comparison | `spectral/endmembers.py`, `visualization/spectra.py` | Implemented |
-| 8 | Detection algorithm | `algorithms/sam.py` | Detector implemented, **no orchestrator** |
+| 8 | Detection algorithm | `algorithms/sam.py`, `pipeline.py` | Implemented |
 | 9 | Validation against geological mapping | `validation/` | **Pending, Tier 1** |
-| 10 | Result visualisation | `visualization/maps.py` | **Pending, Tier 1** |
+| 10 | Result visualisation and export | `visualization/maps.py`, `io/raster_io.py` | Implemented |
 
 Stages 1 to 6 are the preprocessing that Week 2 closed, and a single function
-chains them: `build_scene_from_safe()`. `pipeline.py` — the orchestrator for the
-whole project, the one that would cover stages 7 to 10 — still raises
-`NotImplementedError`.
+chains them: `build_scene_from_safe()`. Stages 7, 8 and 10 are chained by
+`run_pipeline(config)`, which Week 3 closed: from the experiment's YAML to the
+GeoTIFF and the heatmap, with no manual steps. The only unimplemented stage is
+9.
 
 ## The implemented flow: from `.SAFE` to `Scene`
 
@@ -246,6 +247,128 @@ reference value and returning an impeccably computed, meaningless map. That
 alignment is verified at three levels
 ([technical decisions §7](technical_decisions.md#alignment-verification-the-result)).
 
+## The implemented flow: from `Config` to map
+
+```
+configs/tamarugal_kaolinite.yaml
+   |
+   |-- load_config(path) ................... Config (scene, aoi, mineral, algorithm, output)
+   |
+   v
+run_pipeline(config)
+   |
+   |-- _normalizar_root_escena(scene.path) . directory to search for the .SAFE
+   |-- _resolver_aoi(aoi) .................. Window from aoi.window_px
+   |
+   |   data/interim/scene.npz  --(if window and bands match)-->  Scene
+   |          ^                                                    |
+   |          +--- otherwise: build_scene_from_safe(root, bands, aoi) --+
+   |
+   v
+apply_mask(scene.cube, scene.mask)          NaN on invalid pixels
+   |
+   +--> cube[SAM_BANDS indices] ............. 9 bands, not 12
+   |
+   |    get_reference_spectrum("kaolinite", band_order=SAM_BANDS)
+   |                     |
+   v                     v
+_crear_detector(algorithm.name) -> Detector.predict(cube, reference)
+   |
+   v
+angle map (height, width), NaN where ~scene.mask
+   |
+   +-- write_geotiff ---> outputs/maps/kaolinite_sam_angle.tif
+   +-- plot_score_map --> outputs/figures/kaolinite_sam_angle.png
+   +-- dict of paths and statistics (what the CLI prints)
+```
+
+### 8. Detection algorithm and its orchestrator
+
+**Functions**: `SAM.predict(cube, reference)` and `threshold(angle_map,
+max_angle)` in `algorithms/sam.py`; `run_pipeline(config)` in `pipeline.py`.
+
+**In**: a `Config` loaded with `load_config`. From it come the scene
+(`scene.path`, `scene.bands`), the AOI (`aoi.window_px`), the target mineral
+(`mineral.target`), the algorithm (`algorithm.name`) and the output paths
+(`output`).
+
+**Out**: the spectral angle map in radians `(height, width)` with `NaN` on
+invalid pixels, plus a `dict` of the paths written and the map's statistics.
+The function returns data; printing is the CLI's job.
+
+**There are four non-obvious decisions**:
+
+1. **The detector is instantiated from a registry**, not from an `if`.
+   `DETECTORS` maps `algorithm.name` to the class, and the rest of the flow
+   never names SAM. Adding Random Forest is one class in `algorithms/` and one
+   entry in that dict
+   ([technical decisions §1.2](technical_decisions.md#12-detector--srcmineralmapalgorithmsbasepy)).
+2. **`scene.path` is normalised before the product is located.** The configs
+   point at the `.SAFE` folder itself, but `find_safe_dir(root)` looks for
+   `.SAFE` folders *under* `root`: handing it the product path finds nothing
+   and aborts with a `FileNotFoundError` blaming the scene for not being
+   downloaded when it is right there. The normalisation lives in the pipeline
+   so that `find_safe_dir`, which already has tests, keeps its contract.
+3. **The cache is verified before it is used.** `data/interim/scene.npz` is
+   reused only if its window and bands are the ones the config asks for. A
+   cache used blindly is the project's worst failure mode: the pipeline runs to
+   completion, writes a valid GeoTIFF and the map belongs to a different AOI.
+   Anything that cannot be verified counts as a mismatch and the product is
+   re-read — three minutes of reading beat a wrong map. `--no-cache` skips it.
+4. **`aoi.window_px` beats `aoi.bbox`.** The window is expressed on the tile's
+   20 m grid, which is the exact definition of the AOI; the WGS84 bbox is its
+   rounded equivalent. If the bbox won, the crop would shift by a few pixels
+   with nothing to report it. This stage is `window_px`'s first consumer:
+   until Week 3 nothing read it.
+
+**The detector consumes 9 bands, not 12.** The `Scene` is still born with the
+12 of `BAND_ORDER` and the pipeline subsets it to `SAM_BANDS` **by index**,
+with the same ordering it uses to request the signature from
+`get_reference_spectrum`
+([technical decisions §2](technical_decisions.md#sam_bands--9-bands-declared-and-not-yet-consumed)).
+
+**Zero detections is a result, not an error.** The pipeline reports how many
+pixels fell below `angle_threshold_rad` alongside a threshold sweep (0.05 to
+0.20 rad) and writes the angle map regardless: the map is the deliverable, and
+the threshold is waiting on a calibration criterion. Without that sweep, an
+empty result is indistinguishable from a computation error.
+
+### 10. Result visualisation and export
+
+**Functions**: `write_geotiff(path, array, scene, band_descriptions)` in
+`io/raster_io.py` and `plot_score_map(score_map, scene, title, p_low, p_high)`
+in `visualization/maps.py`.
+
+**In**: the 2D map returned by stage 8 and the `Scene` it came from.
+
+**Out**: `outputs/maps/kaolinite_sam_angle.tif` (`float32` GeoTIFF, EPSG:32719,
+`deflate`, `tiled`, `NaN` as nodata and the band described) and
+`outputs/figures/kaolinite_sam_angle.png` (map + histogram).
+
+**There are four non-obvious decisions**:
+
+1. **`write_geotiff` validates the spatial shape against the `Scene`.** Writing
+   a map computed over a different window yields a flawless GeoTIFF that opens
+   in any GIS and lands on the wrong ground. It is the function's only failure
+   mode that goes unnoticed, so it is a `ValueError` carrying both shapes.
+2. **No tags of our own are written** (date, user, source path): the file comes
+   out byte-for-byte identical across two consecutive runs, which is what makes
+   reproducibility checkable by comparing hashes. Provenance already travels in
+   `Scene.meta`.
+3. **Nodata is `NaN`, not `0`.** A 0 rad angle is a perfect match against the
+   signature: using it as a sentinel would turn the masked pixels into the
+   map's strongest detections.
+4. **The figure is two panels.** The map says *where*; the histogram says
+   *whether there is anything to look at*: a distribution with a tail towards
+   low angles is evidence that the detector separates something, and a
+   symmetric bell with no tail is noise shaped like a result. The map alone
+   cannot tell those two cases apart. The colour scale is clipped to the 2–98
+   percentiles rather than the full `[0, π]` range — this scene's real angles
+   span 0.07 to 0.70 rad — the percentiles are computed with `np.nanpercentile`
+   (a single `NaN` under `np.percentile` flattens the panel without raising
+   anything), and the axes are in CRS coordinates derived from
+   `scene.transform`, not pixel indices.
+
 ## How to run it
 
 From the repository root, with the environment from the
@@ -257,6 +380,7 @@ From the repository root, with the environment from the
 | `python scripts/visualizar_rgb.py` | True-colour composite (B4/B3/B2) with a percentile stretch | `outputs/figures/scene_rgb.png` |
 | `python scripts/visualizar_mascara.py` | Re-reads SCL over the `Scene` window and draws it next to `Scene.mask` | `outputs/figures/mascara_scl.png` |
 | `python scripts/plot_kaolinite_signature.py` | Kaolinite reference signature, band by band | `outputs/figures/kaolinite_signature.png` |
+| `python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml` | Stages 7, 8 and 10 end to end: resolves the `Scene`, runs the detector and prints the summary | `outputs/maps/kaolinite_sam_angle.tif` and `outputs/figures/kaolinite_sam_angle.png` |
 
 `visualizar_rgb.py` and `visualizar_mascara.py` load `data/interim/scene.npz`
 and, if it is missing, build the `Scene` from `data/raw/`.
@@ -268,23 +392,7 @@ index axis instead of using `plot_spectra`, which is what notebook 01 and the
 `notebooks/01_explore_sentinel2_scene.ipynb` walks the same flow interactively
 and closes with the alignment check between cube and reference signature.
 
-## What is missing: stages 8 to 10, pending Tier 1
-
-None of what follows is wired up. It is documented so that **what is missing**
-is clear, not to suggest it exists.
-
-**8. Detection algorithm.** `algorithms/sam.py` *is* implemented and tested:
-`SAM.predict(cube, reference)` returns the spectral angle map and
-`threshold(angle_map, max_angle)` binarises it. What does not exist is the
-orchestrator that would run it over a `Scene`:
-`pipeline.py::run_pipeline(config)` raises `NotImplementedError` and
-`scripts/run_pipeline.py` calls it, so the README quickstart does not yet
-produce a map. On top of that, the threshold set in
-`configs/tamarugal_kaolinite.yaml` (`angle_threshold_rad: 0.1`) **would not
-detect a single pixel** over the 256 × 256 px window of the AOI where it was
-measured; the value is deliberately left in place, waiting for a calibration
-criterion rather than another number picked by eye
-([technical decisions §7](technical_decisions.md#the-config-threshold-would-detect-nothing)).
+## What is missing: stage 9, pending Tier 1
 
 **9. Validation against geological mapping.** `validation/geology.py` (loading
 SERNAGEOMIN polygons and rasterising ground truth) and `validation/metrics.py`
@@ -292,11 +400,15 @@ SERNAGEOMIN polygons and rasterising ground truth) and `validation/metrics.py`
 raises `NotImplementedError`. No ground truth has been downloaded into
 `data/external/`.
 
-**10. Result visualisation.** `visualization/maps.py::plot_score_map()` is a
-stub. What the module does implement is what preprocessing consumes:
-`percentile_stretch`, `rgb_composite`, `scl_to_rgb` and `plot_scl_classes`.
-Likewise `io/raster_io.py::write_geotiff()` and `read_scene()` remain
-unimplemented, so there is still no way to export a score map to GeoTIFF.
+**This is what stops the stage 8 map from being called a "kaolinite
+detection".** What exists is a spectral similarity map: it states how far, in
+angle, each pixel sits from the laboratory signature, not which mineral is on
+the ground. Without ground truth there is no way to estimate how many of those
+pixels are kaolinite and how many are any other surface that resembles it
+across 9 bands. The measured figures are in the "Results" section of the
+[README](../../README.md#results).
 
-**Consequently, the project reports no kaolinite detection.** What is verified
-today is in the "Results" section of the [README](../../README.md#results).
+`io/raster_io.py::read_scene()` also remains unimplemented. It is the
+counterpart of reading a multi-band `Scene` back from GeoTIFF and it blocks
+nothing: the `Scene` is serialised to `.npz` with `save_scene`/`load_scene`,
+and `write_geotiff` exists to export results, not to read them back.

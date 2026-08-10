@@ -40,6 +40,13 @@ outputs/*
 outputs/figures/*
 !outputs/figures/*.png
 
+# outputs/maps/ recibe los GeoTIFF del pipeline: la carpeta existe en el repo
+# (via .gitkeep) para que un clon limpio pueda correr el pipeline sin crearla,
+# pero los .tif no se versionan --se regeneran desde el config y pesan--.
+!outputs/maps/
+outputs/maps/*
+!outputs/maps/.gitkeep
+
 # outputs/scratch/ es el destino de las salidas exploratorias: la carpeta
 # existe en el repo (via .gitkeep) para que los scripts puedan escribir ahi
 # sin crearla, pero nada de lo que se genere dentro se versiona.

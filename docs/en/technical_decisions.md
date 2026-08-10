@@ -388,29 +388,92 @@ only be the ~1400 nm OH overtone sampled by B10. The wavelength file from the
 is, the test that consumes it stays under `skipif`. The same applies to
 `USGS_RESAMPLING_PLATFORM = "S2A"`, which is declared but unverified.
 
-### The config threshold would detect nothing
+### The config threshold is still uncalibrated
 
-Measured over a 256×256 px window of the AOI, on the masked cube (100 % valid
-pixels, all bare soil):
+There are **two measurements at two different scales**, and both are kept
+because they say different things. Neither replaces the other: the first was
+taken in Week 2 over a subsample, the second is over the AOI the pipeline now
+walks end to end.
+
+**256×256 px window** (65,536 pixels, 100 % valid, all bare soil), on the
+masked cube:
 
 | bands | min | median | max | below threshold 0.1 |
 |-------|-----|--------|-----|---------------------|
 | `SAM_BANDS` (9)   | 0.164 | 0.250 | 0.453 | 0 of 65,536 |
 | `BAND_ORDER` (12) | 0.166 | 0.247 | 0.426 | 0 of 65,536 |
 
-`configs/tamarugal_kaolinite.yaml` sets `angle_threshold_rad: 0.1`. **Not one
-pixel would fall below it.** The value is deliberately left untouched here: it
-has to be replaced with a calibration criterion, not with another number picked
-by eye. The notebook figure explains why no reasonable threshold would find
-kaolinite in this window: the reference plunges from B11 to B12 through the
-Al–OH absorption and neither pixel follows it.
+**Full AOI, 2000×2000 px** (3,999,908 valid pixels out of 4,000,000, i.e.
+99.9977 %). Taken from the summary printed by
+`python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml`:
 
-The two distributions are practically identical, which is what one expects and
-not an argument for either. Dropping B1, B8 and B9 does not change the result
-over clear desert because there all three contribute little useful variance. The
-reason to prefer 9 remains the one in section 2, not performance; what this
-number adds is that the trim **costs nothing**, which is what had to be checked
-before fixing it.
+| bands | min | p1 | median | max |
+|-------|-----|----|--------|-----|
+| `SAM_BANDS` (9) | 0.0723 | 0.2055 | 0.2742 | 0.6971 |
+
+| threshold (rad) | pixels | % of valid AOI |
+|-----------------|--------|----------------|
+| 0.05 | 0 | 0.000 % |
+| 0.08 | 5 | 0.000 % |
+| 0.10 | **62** | 0.002 % |
+| 0.15 | 4,513 | 0.113 % |
+| 0.20 | 30,885 | 0.772 % |
+
+Both full-AOI tables carry **only the 9-band row**: the pipeline runs
+`SAM_BANDS` and that is all that has been measured at this scale. The
+experiment was not repeated with `BAND_ORDER` over the 4 million pixels, so
+that row does not exist and is not estimated.
+
+#### Why the two measurements differ so much
+
+The minimum drops from 0.164 to 0.0723 and the 0.1 threshold goes from leaving
+0 pixels to leaving 62. Two effects push in the same direction, and this
+measurement does not separate them:
+
+1. **There are ~61 times more samples.** A sample minimum is an extreme order
+   statistic: it drifts towards the centre of the distribution when there are
+   few observations, simply because the lower tail is unpopulated. 65,536
+   pixels are not enough for the 62 cases that fall below 0.1 among 3,999,908 —
+   16 per million — to show up, and in a subsample that size finding zero is
+   the expected outcome even when they exist.
+2. **The full AOI is more heterogeneous.** The small window is 5.12 × 5.12 km
+   of homogeneous bare soil; the AOI's 40 × 40 km take in the drainage network,
+   the piedmont, the town and the irrigated fields. That the median also shifts
+   (0.250 → 0.2742) and the maximum nearly doubles (0.453 → 0.6971) is the sign
+   that sample size is not the whole story: these are surfaces the window did
+   not contain.
+
+**What would be wrongly concluded by generalising the small window to the full
+AOI** is that no reasonable threshold separates anything and that the SAM route
+is exhausted: at 0.15 rad there are 4,513 pixels, which is a population one can
+actually work with. Conversely, calibrating the threshold against the 256×256
+px window would mean tuning it on a crop that does not contain the lower tail
+one is trying to detect. Every angle figure in this project has to state which
+window it was measured over; without that, it is not comparable to any other.
+
+#### The conclusion is unchanged
+
+`configs/tamarugal_kaolinite.yaml` sets `angle_threshold_rad: 0.1`. **That value
+still has no calibration criterion**, and it is deliberately left untouched
+here: it has to be replaced with a criterion, not with another number picked by
+eye. That it now leaves 62 pixels instead of 0 does not validate it — it only
+shows that the earlier 0 was an artefact of the window size.
+
+**62 pixels out of 3,999,908 are not a kaolinite detection.** The spectral
+angle measures resemblance to a laboratory signature, not the presence of a
+mineral: any surface that looks similar across 9 bands scores just as low.
+While `validation/` has no ground truth (stage 9 of the
+[pipeline](pipeline.md)) there is nothing to estimate how many of those pixels
+are the mineral. The notebook figure shows the mechanism over the small window:
+the reference plunges from B11 to B12 through the Al–OH absorption and neither
+of the two plotted pixels follows it.
+
+Over the 256×256 px window the two distributions — 9 and 12 bands — are
+practically identical, which is what one expects and not an argument for
+either. Dropping B1, B8 and B9 does not change the result over clear desert
+because there all three contribute little useful variance. The reason to prefer
+9 remains the one in section 2, not performance; what this number adds is that
+the trim **costs nothing**, which is what had to be checked before fixing it.
 
 ## 8. The SAM detector
 
