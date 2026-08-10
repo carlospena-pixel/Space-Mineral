@@ -1,4 +1,5 @@
-"""Pruebas del realce por percentiles, del compuesto RGB y de la figura de SCL.
+"""Pruebas del realce por percentiles, del compuesto RGB y de las figuras de
+SCL y del mapa de puntaje.
 
 Sin dependencia de la escena: el Scene y la banda SCL se arman sinteticos. El
 backend "Agg" se fija antes de importar pyplot para que corran sin display (CI
@@ -19,9 +20,15 @@ from mineralmap.visualization.maps import (  # noqa: E402
     SCL_COLORS,
     percentile_stretch,
     plot_scl_classes,
+    plot_score_map,
     rgb_composite,
     scl_to_rgb,
 )
+
+# Transform de un AOI plausible: origen en UTM 19S y pixel de 20 m. Los tests
+# del mapa de puntaje comprueban que los ejes salgan en coordenadas del CRS, y
+# con la identidad no se distinguirian de indices de pixel.
+TRANSFORM_AOI = Affine(20.0, 0.0, 420000.0, 0.0, -20.0, 7780000.0)
 
 
 def _scene_sintetico(cube: np.ndarray) -> Scene:
@@ -31,6 +38,17 @@ def _scene_sintetico(cube: np.ndarray) -> Scene:
         cube=cube,
         band_names=["B2", "B3", "B4"],
         transform=Affine.identity(),
+        crs=CRS.from_epsg(32719),
+        mask=np.ones((alto, ancho), dtype=bool),
+    )
+
+
+def _scene_para_puntajes(alto: int = 8, ancho: int = 8) -> Scene:
+    """Scene con georreferenciacion realista, para las figuras de puntaje."""
+    return Scene(
+        cube=np.zeros((3, alto, ancho), dtype=np.float32),
+        band_names=["B2", "B3", "B4"],
+        transform=TRANSFORM_AOI,
         crs=CRS.from_epsg(32719),
         mask=np.ones((alto, ancho), dtype=bool),
     )
@@ -180,3 +198,88 @@ def test_dibujar_un_scl_y_una_mascara_de_formas_distintas_es_un_error():
     comparacion entre paneles no significaria nada."""
     with pytest.raises(ValueError, match="misma forma"):
         plot_scl_classes(np.zeros((2, 2), dtype=int), np.ones((3, 3), dtype=bool))
+
+
+def test_el_mapa_de_puntaje_devuelve_los_dos_paneles():
+    """Mapa e histograma son la misma pregunta mirada de dos formas: el mapa
+    dice donde, el histograma dice si hay algo que mirar."""
+    scene = _scene_para_puntajes()
+    angulos = np.linspace(0.16, 0.45, 64).reshape(8, 8)
+
+    ax_mapa, ax_hist = plot_score_map(angulos, scene, title="prueba")
+
+    assert len(ax_mapa.images) == 1
+    # Las barras del histograma son parches; si el panel derecho estuviera
+    # vacio, el entregable de coherencia espectral no existiria.
+    assert len(ax_hist.patches) > 0
+
+
+def test_el_colorbar_del_mapa_declara_que_la_unidad_es_el_radian():
+    """El numero que se lee en la barra es un angulo, no un puntaje en [0,1];
+    sin decirlo, un 0.25 se interpreta como "25 % de parecido"."""
+    scene = _scene_para_puntajes()
+
+    ax_mapa, _ax_hist = plot_score_map(np.full((8, 8), 0.3), scene)
+
+    assert "rad" in ax_mapa.images[0].colorbar.ax.get_ylabel()
+
+
+def test_los_ejes_del_mapa_van_en_coordenadas_del_crs_y_no_en_indices():
+    """Un mapa cuyo eje dice "4" no se puede cruzar con ninguna otra capa ni
+    ubicar en un SIG. El extent sale de `scene.transform`."""
+    scene = _scene_para_puntajes(alto=8, ancho=8)
+
+    ax_mapa, _ax_hist = plot_score_map(np.full((8, 8), 0.3), scene)
+
+    izq, der, abajo, arriba = ax_mapa.images[0].get_extent()
+    assert (izq, arriba) == (420000.0, 7780000.0)
+    # 8 px de 20 m son 160 m de lado.
+    assert (der, abajo) == (420160.0, 7779840.0)
+
+
+def test_un_mapa_con_nan_no_deja_los_limites_del_color_en_nan():
+    """Con `np.percentile`, un solo NaN devuelve NaN como limite: `imshow` no
+    lanza nada y dibuja el panel entero plano. Por eso van los `nan*`."""
+    scene = _scene_para_puntajes()
+    angulos = np.linspace(0.16, 0.45, 64).reshape(8, 8)
+    angulos[0, 0] = np.nan
+
+    ax_mapa, _ax_hist = plot_score_map(angulos, scene)
+
+    vmin, vmax = ax_mapa.images[0].get_clim()
+    assert np.isfinite(vmin) and np.isfinite(vmax)
+    assert vmin < vmax
+
+
+def test_la_escala_de_color_se_recorta_por_percentiles_y_no_al_rango_cero_pi():
+    """Los angulos reales ocupan una franja estrecha de [0, pi]: estirando el
+    color sobre el rango completo el mapa sale de un solo tono."""
+    scene = _scene_para_puntajes()
+    angulos = np.linspace(0.16, 0.45, 64).reshape(8, 8)
+
+    ax_mapa, _ax_hist = plot_score_map(angulos, scene)
+
+    vmin, vmax = ax_mapa.images[0].get_clim()
+    assert vmin > 0.16
+    assert vmax < 0.45
+
+
+def test_el_histograma_cuenta_solo_los_pixeles_validos():
+    """Los NaN del enmascarado no son un angulo de cero: contarlos correria la
+    distribucion hacia el extremo de "muy parecido"."""
+    scene = _scene_para_puntajes()
+    angulos = np.linspace(0.16, 0.45, 64).reshape(8, 8)
+    angulos[:2] = np.nan  # 16 de 64 pixeles invalidos
+
+    _ax_mapa, ax_hist = plot_score_map(angulos, scene)
+
+    total = sum(parche.get_height() for parche in ax_hist.patches)
+    assert total == 48
+
+
+def test_un_mapa_de_forma_distinta_a_la_del_scene_es_un_error():
+    """Los ejes saldrian con las coordenadas de otra ventana del tile."""
+    scene = _scene_para_puntajes(alto=8, ancho=8)
+
+    with pytest.raises(ValueError, match=r"\(4, 4\).*\(8, 8\)"):
+        plot_score_map(np.zeros((4, 4)), scene)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+from rasterio.transform import array_bounds
 
 from mineralmap.io.raster_io import Scene
 from mineralmap.preprocessing.masking import SCL_CLASSES
@@ -305,5 +306,139 @@ def plot_scl_classes(scl, mask, axes=None, title: str = ""):
     return ax_scl, ax_mask
 
 
-def plot_score_map(score_map, scene, title: str = ""):
-    raise NotImplementedError
+# Numero de barras del histograma de angulos. Es el panel que responde la
+# pregunta de coherencia espectral (¿la distribucion tiene estructura o es
+# ruido?), y con pocas barras cualquier distribucion parece una campana lisa.
+SCORE_HIST_BINS = 60
+
+
+def plot_score_map(
+    score_map,
+    scene,
+    title: str = "",
+    p_low: int = P_LOW_DEFAULT,
+    p_high: int = P_HIGH_DEFAULT,
+):
+    """Dibuja un mapa de puntaje junto al histograma de sus valores validos.
+
+    Son dos paneles y no dos figuras porque son la misma pregunta mirada de dos
+    formas. El mapa dice *donde*; el histograma dice *si hay algo que mirar*:
+    una distribucion con cola hacia los angulos bajos es evidencia de que el
+    detector separa algo, y una campana simetrica sin cola es ruido con
+    aspecto de resultado. El mapa solo no distingue esos dos casos.
+
+    Parameters
+    ----------
+    score_map:
+        Mapa de puntaje 2D `(alto, ancho)` tal como lo devuelve
+        `Detector.predict`, con NaN en los pixeles invalidos. En Nivel 1 es el
+        angulo espectral en radianes.
+    scene:
+        Scene que produjo el mapa. Aporta `transform` (para poner los ejes en
+        coordenadas del CRS en vez de indices de pixel) y `crs` (para
+        rotularlos).
+    title:
+        Titulo general de la figura. Se aplica como `suptitle`.
+    p_low, p_high:
+        Percentiles del recorte de la escala de color; por defecto 2 y 98, los
+        mismos que usa `percentile_stretch`. No se fija la escala al rango
+        completo `[0, pi]` a proposito: los angulos reales de una escena
+        ocupan una franja estrecha de ese rango (0,16 a 0,45 rad en este AOI),
+        asi que estirar el color sobre `[0, pi]` deja el mapa de un solo tono.
+
+    Returns
+    -------
+    tuple
+        Los dos ejes usados: (mapa, histograma).
+
+    Raises
+    ------
+    ValueError
+        Si `score_map` no es 2D o si su forma no calza con la del cubo de
+        `scene`. Sin la comprobacion se dibujaria un mapa con los ejes
+        georreferenciados de otra ventana.
+    """
+    import matplotlib.pyplot as plt
+
+    puntajes = np.asarray(score_map, dtype=float)
+
+    if puntajes.ndim != 2:
+        raise ValueError(
+            f"plot_score_map espera un mapa 2D (alto, ancho); recibi "
+            f"{puntajes.ndim} dimensiones con forma {puntajes.shape}."
+        )
+
+    forma_escena = tuple(scene.cube.shape[1:])
+    if puntajes.shape != forma_escena:
+        raise ValueError(
+            f"El mapa de puntaje {puntajes.shape} no calza con la forma "
+            f"espacial del Scene {forma_escena}; los ejes quedarian en las "
+            f"coordenadas de otra ventana."
+        )
+
+    finitos = puntajes[np.isfinite(puntajes)]
+
+    # np.nanpercentile y no np.percentile: el mapa llega con NaN en todo lo
+    # enmascarado, y con np.percentile un solo NaN devuelve NaN como limite.
+    # `imshow` con vmin/vmax NaN no lanza nada, solo dibuja el panel entero
+    # plano.
+    if finitos.size == 0:
+        vmin, vmax = 0.0, float(np.pi)
+    else:
+        vmin, vmax = (float(v) for v in np.nanpercentile(puntajes, (p_low, p_high)))
+        if vmax <= vmin:
+            # Mapa constante (o casi): no hay contraste que estirar y una
+            # escala invertida haria fallar a imshow.
+            vmin, vmax = float(finitos.min()), float(finitos.max())
+        if vmax <= vmin:
+            vmin, vmax = 0.0, float(np.pi)
+
+    fig, (ax_mapa, ax_hist) = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Ejes en coordenadas del CRS y no en indices de pixel: un mapa cuyo eje
+    # dice "1200" no se puede cruzar con ninguna otra capa ni ubicar en un SIG.
+    izq, abajo, der, arriba = array_bounds(*puntajes.shape, scene.transform)
+
+    imagen = ax_mapa.imshow(
+        puntajes,
+        # viridis_r y no viridis: en el SAM el angulo chico es el parecido, o
+        # sea que el extremo "interesante" es el minimo. Con la paleta directa
+        # lo detectado saldria claro sobre fondo oscuro, al reves de como se
+        # lee un mapa de anomalias.
+        cmap="viridis_r",
+        vmin=vmin,
+        vmax=vmax,
+        extent=(izq, der, abajo, arriba),
+    )
+    ax_mapa.set_title(
+        "Angulo espectral vs. la firma de referencia\nmas oscuro = mas parecido"
+    )
+    ax_mapa.set_xlabel(f"Este ({scene.crs.to_string()})")
+    ax_mapa.set_ylabel("Norte")
+
+    barra = fig.colorbar(imagen, ax=ax_mapa, fraction=0.046)
+    # La unidad va en la barra y no en el titulo: el numero que se lee ahi es
+    # un angulo en radianes, y sin decirlo se confunde con un puntaje en [0,1].
+    barra.set_label("Angulo espectral (rad)")
+
+    ax_hist.hist(finitos, bins=SCORE_HIST_BINS, color="#3b528b")
+    ax_hist.axvline(vmin, color="black", linestyle="--", linewidth=1)
+    ax_hist.axvline(
+        vmax,
+        color="black",
+        linestyle="--",
+        linewidth=1,
+        label=f"escala de color (p{p_low}-p{p_high})",
+    )
+    ax_hist.set_title(
+        f"Distribucion de los angulos validos\n{finitos.size:,} px validos"
+    )
+    ax_hist.set_xlabel("Angulo espectral (rad)")
+    ax_hist.set_ylabel("Pixeles")
+    ax_hist.legend(fontsize=8, frameon=False)
+
+    if title:
+        fig.suptitle(title)
+    fig.tight_layout()
+
+    return ax_mapa, ax_hist
