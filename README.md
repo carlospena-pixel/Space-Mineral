@@ -79,7 +79,15 @@ que se quiere medir.
 
 ### Detección: pendiente
 
-`algorithms/sam.py` está implementado y testeado, pero nada lo corre todavía
+`algorithms/sam.py` está implementado y endurecido: valida sus entradas y lanza
+`ValueError` ante un cubo y una firma con distinto número de bandas o ante una
+referencia degenerada, tolera los `NaN` del cubo enmascarado sin propagarlos, y
+su fórmula está contrastada término a término contra el documento 05 del
+proyecto. Los ángulos están verificados contra casos cuyo valor exacto se conoce
+por geometría, no por comparación con otra implementación
+(`docs/es/decisiones_tecnicas.md`, sección 8).
+
+Pero nada lo corre todavía
 sobre la escena: `pipeline.py` levanta `NotImplementedError` y la validación
 contra cartografía de SERNAGEOMIN (`validation/`) es andamiaje. Además, el
 umbral que fija `configs/tamarugal_kaolinite.yaml` no dejaría ni un píxel bajo
@@ -152,7 +160,15 @@ be measured.
 
 #### Detection: pending
 
-`algorithms/sam.py` is implemented and tested, but nothing runs it over the
+`algorithms/sam.py` is implemented and hardened: it validates its inputs and
+raises `ValueError` on a cube and a signature with different band counts or on a
+degenerate reference, it tolerates `NaN` from the masked cube without
+propagating them, and its formula has been checked term by term against the
+project's document 05. The angles are verified against cases whose exact value
+is known by geometry, not by comparison with another implementation
+(`docs/en/technical_decisions.md`, section 8).
+
+But nothing runs it over the
 scene yet: `pipeline.py` raises `NotImplementedError` and validation against
 SERNAGEOMIN mapping (`validation/`) is scaffolding. On top of that, the
 threshold set in `configs/tamarugal_kaolinite.yaml` would leave no pixel below
