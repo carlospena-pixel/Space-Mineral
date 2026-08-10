@@ -394,29 +394,93 @@ paquete `ASCIIdata_splib07*_rsSentinel2` no está en `data/external/`; mientras
 no esté, el test que lo consume queda en `skipif`. Lo mismo vale para
 `USGS_RESAMPLING_PLATFORM = "S2A"`, que está declarado sin verificar.
 
-### El umbral del config no detectaría nada
+### El umbral del config sigue sin calibrar
 
-Medido sobre una ventana de 256×256 px del AOI, con el cubo enmascarado
-(100 % de píxeles válidos, todos suelo desnudo):
+Hay **dos mediciones a dos escalas distintas**, y se conservan las dos porque
+dicen cosas diferentes. Ninguna reemplaza a la otra: la primera es la que se
+hizo en Semana 2 sobre una submuestra, y la segunda es la del AOI que el
+pipeline recorre hoy de extremo a extremo.
+
+**Ventana de 256×256 px** (65.536 píxeles, 100 % válidos, todos suelo desnudo),
+con el cubo enmascarado:
 
 | bandas | mín | mediana | máx | bajo umbral 0,1 |
 |--------|-----|---------|-----|-----------------|
-| `SAM_BANDS` (9)   | 0,164 | 0,250 | 0,453 | 0 de 65 536 |
-| `BAND_ORDER` (12) | 0,166 | 0,247 | 0,426 | 0 de 65 536 |
+| `SAM_BANDS` (9)   | 0,164 | 0,250 | 0,453 | 0 de 65.536 |
+| `BAND_ORDER` (12) | 0,166 | 0,247 | 0,426 | 0 de 65.536 |
 
-`configs/tamarugal_kaolinite.yaml` fija `angle_threshold_rad: 0.1`. **Ni un
-solo píxel quedaría bajo ese umbral.** El valor no se cambia en este trabajo a
-propósito: hay que reemplazarlo con un criterio de calibración, no con otro
-número elegido a ojo. La figura del notebook explica por qué ningún umbral
-razonable encontraría caolinita en esta ventana: la referencia cae en picada de
-B11 a B12 por la absorción Al–OH y ninguno de los píxeles la acompaña.
+**AOI completo, 2000×2000 px** (3.999.908 píxeles válidos de 4.000.000, o sea
+99,9977 %). Sale del resumen que imprime
+`python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml`:
 
-Las dos distribuciones son prácticamente la misma, que es lo esperado y no un
-argumento a favor de ninguna. Quitar B1, B8 y B9 no cambia el resultado sobre
-desierto despejado porque ahí las tres aportan poca varianza útil. La razón
-para preferir 9 sigue siendo la de la sección 2, no el rendimiento; lo que este
-número aporta es que el recorte **no cuesta nada**, que es lo que había que
-comprobar antes de fijarlo.
+| bandas | mín | p1 | mediana | máx |
+|--------|-----|----|---------|-----|
+| `SAM_BANDS` (9) | 0,0723 | 0,2055 | 0,2742 | 0,6971 |
+
+| umbral (rad) | píxeles | % del AOI válido |
+|--------------|---------|------------------|
+| 0,05 | 0 | 0,000 % |
+| 0,08 | 5 | 0,000 % |
+| 0,10 | **62** | 0,002 % |
+| 0,15 | 4.513 | 0,113 % |
+| 0,20 | 30.885 | 0,772 % |
+
+Las dos tablas del AOI completo tienen **solo la fila de 9 bandas**: el
+pipeline corre `SAM_BANDS` y es lo único que hay medido a esta escala. No se
+repitió el experimento con `BAND_ORDER` sobre los 4 millones de píxeles, así
+que esa fila no existe y no se estima.
+
+#### Por qué las dos mediciones difieren tanto
+
+El mínimo pasa de 0,164 a 0,0723 y el umbral de 0,1 pasa de dejar 0 píxeles a
+dejar 62. Son dos efectos que actúan en el mismo sentido y que esta medición no
+separa:
+
+1. **Hay ~61 veces más muestras.** El mínimo de una muestra es un estadístico
+   de orden extremo: crece hacia el centro de la distribución cuando hay pocas
+   observaciones, simplemente porque la cola inferior no está poblada. 65.536
+   píxeles no alcanzan para que aparezcan los 62 casos que en 3.999.908 caen
+   bajo 0,1 —son 16 por cada millón—, y en una submuestra de ese tamaño lo
+   esperable es encontrar cero aunque existan.
+2. **El AOI completo es más heterogéneo.** La ventana chica son 5,12 × 5,12 km
+   de suelo desnudo homogéneo; los 40 × 40 km del AOI incluyen la red de
+   drenaje, el piedemonte, el pueblo y los campos regados. Que la mediana
+   también se corra (0,250 → 0,2742) y que el máximo casi se duplique (0,453 →
+   0,6971) es la señal de que no es solo tamaño muestral: son superficies que
+   la ventana no contenía.
+
+**Lo que se concluiría mal generalizando la ventana chica al AOI completo** es
+que ningún umbral razonable separa nada y que la vía del SAM está agotada: con
+0,15 rad quedan 4.513 píxeles, que es una población con la que sí se puede
+trabajar. Y al revés, calibrar el umbral contra la ventana de 256×256 px
+significaría ajustarlo sobre un recorte que no contiene la cola inferior que se
+quiere detectar. Toda cifra de ángulo de este proyecto tiene que decir sobre
+qué ventana se midió; sin ese dato no es comparable con ninguna otra.
+
+#### La conclusión no cambia
+
+`configs/tamarugal_kaolinite.yaml` fija `angle_threshold_rad: 0.1`. **Ese valor
+sigue sin criterio de calibración**, y no se cambia en este trabajo a propósito:
+hay que reemplazarlo por un criterio, no por otro número elegido a ojo. Que
+ahora deje 62 píxeles en vez de 0 no lo valida —solo muestra que el 0 anterior
+era un artefacto del tamaño de la ventana—.
+
+**62 píxeles de 3.999.908 no son una detección de caolinita.** El ángulo
+espectral mide parecido contra una firma de laboratorio, no presencia de un
+mineral: cualquier superficie que en 9 bandas se le parezca cae igual de bajo.
+Mientras `validation/` siga sin verdad de terreno (etapa 9 del
+[pipeline](pipeline.md)) no hay con qué estimar cuántos de esos píxeles son el
+mineral. La figura del notebook muestra el mecanismo sobre la ventana chica: la
+referencia cae en picada de B11 a B12 por la absorción Al–OH y ninguno de los
+dos píxeles graficados la acompaña.
+
+Sobre la ventana de 256×256 px, las dos distribuciones —9 y 12 bandas— son
+prácticamente la misma, que es lo esperado y no un argumento a favor de
+ninguna. Quitar B1, B8 y B9 no cambia el resultado sobre desierto despejado
+porque ahí las tres aportan poca varianza útil. La razón para preferir 9 sigue
+siendo la de la sección 2, no el rendimiento; lo que este número aporta es que
+el recorte **no cuesta nada**, que es lo que había que comprobar antes de
+fijarlo.
 
 ## 8. El detector SAM
 
