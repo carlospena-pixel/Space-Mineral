@@ -25,3 +25,7 @@ algorithm:
 
 output:
   dir: data/processed/tamarugal_kaolinite/
+  # Nombres de las salidas del experimento. El directorio de cada una lo fija
+  # default.yaml (maps_dir / figures_dir).
+  angle_map: kaolinite_sam_angle.tif
+  heatmap: kaolinite_sam_angle.png

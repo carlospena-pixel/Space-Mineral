@@ -31,3 +31,9 @@ algorithm:
 
 output:
   dir: data/processed/
+  # Los GeoTIFF van a outputs/maps/, que no se versiona: son regenerables desde
+  # este mismo config y pesan. Las figuras van a outputs/figures/, que si se
+  # versiona, porque son la evidencia de cada hito y el equipo las necesita sin
+  # descargar la escena ni recomputar nada. Ver .gitignore.
+  maps_dir: outputs/maps/
+  figures_dir: outputs/figures/
