@@ -417,3 +417,147 @@ desierto despejado porque ahí las tres aportan poca varianza útil. La razón
 para preferir 9 sigue siendo la de la sección 2, no el rendimiento; lo que este
 número aporta es que el recorte **no cuesta nada**, que es lo que había que
 comprobar antes de fijarlo.
+
+## 8. El detector SAM
+
+`src/mineralmap/algorithms/sam.py`.
+
+### La fórmula y su fuente
+
+Para un píxel `x` y la firma de referencia `r`, ambos vectores de `n_bandas`
+componentes:
+
+```
+θ(x, r) = arccos( (x · r) / (‖x‖ · ‖r‖) )
+```
+
+**Contrastada término a término contra el documento 05 del proyecto**, que es
+la fuente de la especificación:
+
+| Aspecto | Documento 05 | Implementado |
+|---------|--------------|--------------|
+| Normalización previa de los vectores | Ninguna; la normalización va en el denominador | Igual |
+| Unidad de salida | Radianes | Radianes (`np.arccos`) |
+| Definición del puntaje | El ángulo mismo («ángulo pequeño = alta similitud») | El ángulo mismo |
+| `clip(-1, 1)` antes del `arccos` | Prescrito, para evitar `NaN` por error numérico | Presente |
+| Vectorización | `einsum`/broadcasting, sin bucles sobre píxeles | `einsum` |
+| Bandas en la suma | 12 | `n_bandas`, y el pipeline pasa 9 |
+
+La única divergencia es la última, y es **deliberada**: el documento 05 se
+escribió cuando el contrato de bandas era `BAND_ORDER`, y el proyecto decidió
+después que el detector consumiría `SAM_BANDS` (sección 2), con la medición de
+la sección 7 mostrando que el recorte no cambia la distribución de ángulos. La
+implementación no fija ningún número de bandas: valida que el cubo y la firma
+coincidan entre sí, que es la propiedad que de verdad importa.
+
+**Consecuencia sobre la dirección del puntaje.** El documento 05 define el
+puntaje como el ángulo, o sea que menor es más parecido. Eso deja a `SAM`, al
+`viridis_r` de los mapas, al `angle_threshold_rad` de los configs y al `<=` de
+`threshold()` todos del mismo lado. Ver la deuda al final de esta sección.
+
+### Qué valida ahora, y qué lanza
+
+Antes, `predict` sólo fallaba desde adentro de `np.einsum`, con un mensaje sobre
+dimensiones de operandos que no menciona bandas ni firmas. Ahora:
+
+| Entrada | Reacción | Por qué no puede pasar en silencio |
+|---------|----------|-------------------------------------|
+| `cube` y `reference` con distinto número de bandas | `ValueError` nombrando **los dos largos** | Es el cruce `BAND_ORDER` (12) contra `SAM_BANDS` (9). El pipeline lo vuelve cotidiano |
+| `cube` que no es 3D | `ValueError` con la forma recibida | Un cubo 2D es una firma, no una escena |
+| `reference` que no es 1D | `ValueError` | Una firma `(n, 1)` hace broadcast y devuelve un mapa de la forma equivocada con valores plausibles |
+| `reference` con `NaN` o `inf` | `ValueError` con las posiciones | Vuelve `NaN` el mapa completo, y un mapa todo `NaN` es indistinguible de una escena enteramente enmascarada |
+| `reference` de norma cero | `ValueError` | No hay dirección contra la cual medir un ángulo. Mismo criterio que `normalize_signature` (sección 7) |
+
+**Lo que deliberadamente NO valida: los `NaN` del cubo.** Un cubo con `NaN` es
+la entrada normal del detector, no un caso patológico: el pipeline le entrega el
+cubo ya enmascarado con `apply_mask` (sección 4). Un píxel `NaN` devuelve `NaN`
+y no contamina a sus vecinos, y hay un test que fija esa promesa. Cualquier
+validación que rechace un cubo con `NaN` rompe el pipeline entero.
+
+La firma `predict(cube, reference)` **no cambió** y no se le agregó un parámetro
+`mask`, aunque sería cómodo: es el mecanismo de escalabilidad de la sección 1.2,
+y enmascarar es trabajo del consumidor.
+
+### Dos comportamientos que existían sin estar escritos
+
+- **Píxel de norma cero** (todas las bandas exactamente en 0) → `NaN`. Un vector
+  nulo no tiene dirección, así que el ángulo contra él no es 0 ni π/2: no está
+  definido. Devolver 0 lo declararía coincidencia perfecta y lo pintaría como la
+  detección más fuerte del mapa. `NaN` lo saca por el mismo camino que un píxel
+  enmascarado.
+- **`threshold()` descarta los `NaN`**, que es lo correcto, pero eso sale de la
+  semántica de IEEE-754 —toda comparación contra `NaN` es falsa— y no de código
+  escrito para ello. Queda anotado porque una reimplementación que «limpiara»
+  los `NaN` antes de comparar, por ejemplo con `np.nan_to_num`, los convertiría
+  en `0.0` y por lo tanto en las detecciones más fuertes del mapa.
+
+### Precisión: el acumulador es `float64`, el cubo sigue en `float32`
+
+El producto punto y la norma del píxel se calculan con el parámetro `dtype` de
+`np.einsum`, que fija el acumulador de la suma **sin castear el cubo**.
+
+Medido sobre un cubo de 9 bandas contra el mismo cálculo en `float64` puro:
+
+| Cubo | Acumulador `float32` (antes) | Acumulador `float64` (ahora) |
+|------|------------------------------|------------------------------|
+| Píxeles arbitrarios | 3,8 × 10⁻⁷ rad | 2,9 × 10⁻⁸ rad |
+| Píxeles casi idénticos a la firma | **4,5 × 10⁻⁴ rad** | 3,9 × 10⁻⁸ rad |
+
+**La fila que decide es la segunda, porque es el régimen de una detección.**
+Cerca de coseno = 1 la derivada de `arccos` diverge y amplifica el redondeo: en
+esa medición el ángulo verdadero era 1,3 × 10⁻⁵ rad, o sea que el error era **35
+veces más grande que la cantidad que se estaba midiendo**. El ángulo era ruido
+justo donde el mapa afirma haber encontrado algo.
+
+El costo en memoria es cero, que es lo que hacía falta comprobar antes de
+elegir. El cubo real del AOI, `(12, 2000, 2000)`, sigue ocupando 183 MB en
+`float32`; un `cube.astype(np.float64)` habría costado 366 MB, y da exactamente
+el mismo error que el acumulador (3,9 × 10⁻⁸ rad). Lo único que se materializa
+en `float64` son los dos mapas `(alto, ancho)`, 30,5 MB cada uno.
+
+Lo que no arregla: los ángulos muy cerca de 0 y de π siguen teniendo un piso de
+error de ~2 × 10⁻⁸ rad, porque es la sensibilidad intrínseca de `arccos` en
+±1 y no un problema de acumulación. Es irreducible mientras el puntaje sea el
+ángulo y no su coseno.
+
+### Los casos de prueba son analíticos, no comparativos
+
+`tests/test_sam.py` verifica ángulos cuyo valor exacto se conoce **por
+construcción geométrica** (ortogonal → π/2, `[1,0]` contra `[1,1]` → π/4,
+`[1,0,0]` contra `[1,1,√2]` → π/3, `[1,0]` contra `[√3,1]` → π/6, antiparalelo
+→ π), no comparando contra otra implementación de SAM: dos implementaciones que
+coinciden sólo demuestran que coinciden, incluso si ambas se equivocan igual.
+Los casos exactos se verifican a `1e-12`; los dos que caen en los extremos de
+`arccos`, a `1e-7`, por el piso de error del párrafo anterior.
+
+Hay además un test-oráculo que compara la versión vectorizada contra un bucle
+`for` ingenuo sobre un cubo no cuadrado. Es el que atrapa un error de ejes en el
+`einsum`: un `"bhw,b->hw"` mal escrito no lanza nada, devuelve un mapa
+transpuesto que se ve perfectamente razonable.
+
+### Deuda abierta: la dirección del puntaje
+
+`Detector.predict` documenta «a mayor valor, mayor evidencia» y `SAM.predict`
+devuelve un ángulo, donde **menor es más parecido**.
+
+**No se resuelve en esta semana, a propósito.** Invertir el signo de SAM a mitad
+de sprint rompería el pipeline y la visualización del Track A sin lanzar ningún
+error: los mapas se seguirían dibujando, con la escala de color al revés. Y SAM
+no es el que se desvía: el documento 05 define el puntaje como el ángulo, y
+`viridis_r`, `angle_threshold_rad` y el `<=` de `threshold()` ya asumen esa
+dirección. El que quedó redactado para un puntaje que ningún detector produce
+todavía es el contrato de la sección 1.2.
+
+Las dos salidas posibles:
+
+1. Reescribir el contrato para admitir puntajes con **dirección declarada por
+   cada detector** (un atributo de clase del tipo `higher_is_better`).
+2. Normalizar todos los detectores a «mayor es mejor». Para SAM sería devolver
+   el coseno en vez del ángulo, lo que además elimina el piso de error de
+   `arccos` en los extremos, pero obliga a reescribir `threshold`, los configs y
+   los mapas.
+
+**Fecha de revisión: al cerrar la Semana 4, y en todo caso antes del primer
+commit del segundo detector (Nivel 2, Random Forest).** A partir de ahí el
+pipeline tiene que comparar puntajes de algoritmos distintos, y necesita saber
+qué significan.

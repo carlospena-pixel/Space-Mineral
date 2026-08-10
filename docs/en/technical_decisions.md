@@ -411,3 +411,145 @@ over clear desert because there all three contribute little useful variance. The
 reason to prefer 9 remains the one in section 2, not performance; what this
 number adds is that the trim **costs nothing**, which is what had to be checked
 before fixing it.
+
+## 8. The SAM detector
+
+`src/mineralmap/algorithms/sam.py`.
+
+### The formula and its source
+
+For a pixel `x` and the reference signature `r`, both vectors of `n_bands`
+components:
+
+```
+θ(x, r) = arccos( (x · r) / (‖x‖ · ‖r‖) )
+```
+
+**Checked term by term against the project's document 05**, which is the source
+of the specification:
+
+| Aspect | Document 05 | Implemented |
+|--------|-------------|-------------|
+| Prior normalisation of the vectors | None; normalisation lives in the denominator | Same |
+| Output unit | Radians | Radians (`np.arccos`) |
+| Definition of the score | The angle itself ("small angle = high similarity") | The angle itself |
+| `clip(-1, 1)` before `arccos` | Prescribed, to avoid `NaN` from numerical error | Present |
+| Vectorisation | `einsum`/broadcasting, no per-pixel loops | `einsum` |
+| Bands in the sum | 12 | `n_bands`, and the pipeline passes 9 |
+
+The only divergence is the last one, and it is **deliberate**: document 05 was
+written when the band contract was `BAND_ORDER`, and the project later decided
+the detector would consume `SAM_BANDS` (section 2), with the measurement in
+section 7 showing that the trim does not change the angle distribution. The
+implementation fixes no band count: it validates that cube and signature agree
+with each other, which is the property that actually matters.
+
+**Consequence for the score direction.** Document 05 defines the score as the
+angle, so lower means more similar. That puts `SAM`, the maps' `viridis_r`, the
+configs' `angle_threshold_rad` and the `<=` in `threshold()` all on the same
+side. See the debt at the end of this section.
+
+### What it validates now, and what it raises
+
+Previously `predict` only failed from inside `np.einsum`, with a message about
+operand dimensions that mentions neither bands nor signatures. Now:
+
+| Input | Reaction | Why it cannot pass silently |
+|-------|----------|------------------------------|
+| `cube` and `reference` with different band counts | `ValueError` naming **both lengths** | This is `BAND_ORDER` (12) crossed with `SAM_BANDS` (9). The pipeline makes it an everyday mistake |
+| `cube` that is not 3D | `ValueError` with the shape received | A 2D cube is a signature, not a scene |
+| `reference` that is not 1D | `ValueError` | A `(n, 1)` signature broadcasts and returns a map of the wrong shape with plausible values |
+| `reference` with `NaN` or `inf` | `ValueError` with the positions | It turns the whole map into `NaN`, and an all-`NaN` map is indistinguishable from a fully masked scene |
+| `reference` with zero norm | `ValueError` | There is no direction to measure an angle against. Same criterion as `normalize_signature` (section 7) |
+
+**What it deliberately does NOT validate: `NaN` in the cube.** A cube with `NaN`
+is the detector's normal input, not a pathological case: the pipeline hands it
+the cube already masked with `apply_mask` (section 4). A `NaN` pixel returns
+`NaN` and does not contaminate its neighbours, and a test pins that promise
+down. Any validation rejecting a cube with `NaN` breaks the whole pipeline.
+
+The `predict(cube, reference)` signature **did not change** and no `mask`
+parameter was added, convenient as that would be: it is the scalability
+mechanism of section 1.2, and masking is the consumer's job.
+
+### Two behaviours that existed without being written down
+
+- **Zero-norm pixel** (all bands exactly 0) → `NaN`. A null vector has no
+  direction, so the angle against it is neither 0 nor π/2: it is undefined.
+  Returning 0 would declare it a perfect match and paint it as the strongest
+  detection on the map. `NaN` removes it by the same path as a masked pixel.
+- **`threshold()` discards `NaN`**, which is correct, but that follows from
+  IEEE-754 semantics — every comparison against `NaN` is false — and not from
+  code written for it. It is recorded because a reimplementation that "cleaned"
+  the `NaN` before comparing, say with `np.nan_to_num`, would turn them into
+  `0.0` and therefore into the strongest detections on the map.
+
+### Precision: the accumulator is `float64`, the cube stays `float32`
+
+The dot product and the pixel norm are computed through the `dtype` parameter of
+`np.einsum`, which fixes the accumulator of the sum **without casting the cube**.
+
+Measured on a 9-band cube against the same computation in pure `float64`:
+
+| Cube | `float32` accumulator (before) | `float64` accumulator (now) |
+|------|--------------------------------|------------------------------|
+| Arbitrary pixels | 3.8 × 10⁻⁷ rad | 2.9 × 10⁻⁸ rad |
+| Pixels nearly identical to the signature | **4.5 × 10⁻⁴ rad** | 3.9 × 10⁻⁸ rad |
+
+**The deciding row is the second, because it is the regime of a detection.**
+Near cosine = 1 the derivative of `arccos` diverges and amplifies rounding: in
+that measurement the true angle was 1.3 × 10⁻⁵ rad, meaning the error was **35
+times larger than the quantity being measured**. The angle was noise exactly
+where the map claims to have found something.
+
+The memory cost is zero, which is what had to be checked before choosing. The
+real AOI cube, `(12, 2000, 2000)`, still occupies 183 MB in `float32`; a
+`cube.astype(np.float64)` would have cost 366 MB and gives exactly the same
+error as the accumulator (3.9 × 10⁻⁸ rad). The only things materialised in
+`float64` are the two `(height, width)` maps, 30.5 MB each.
+
+What it does not fix: angles very close to 0 and π keep an error floor of
+~2 × 10⁻⁸ rad, because that is the intrinsic sensitivity of `arccos` at ±1 and
+not an accumulation problem. It is irreducible while the score is the angle
+rather than its cosine.
+
+### The test cases are analytic, not comparative
+
+`tests/test_sam.py` verifies angles whose exact value is known **by geometric
+construction** (orthogonal → π/2, `[1,0]` against `[1,1]` → π/4, `[1,0,0]`
+against `[1,1,√2]` → π/3, `[1,0]` against `[√3,1]` → π/6, antiparallel → π),
+not by comparing against another SAM implementation: two implementations that
+agree only prove that they agree, even if both are wrong in the same way. The
+exact cases are checked to `1e-12`; the two that fall at the extremes of
+`arccos`, to `1e-7`, because of the error floor described above.
+
+There is also an oracle test comparing the vectorised version against a naive
+`for` loop over a non-square cube. That is the one that catches an axis error in
+the `einsum`: a mis-written `"bhw,b->hw"` raises nothing, it returns a
+transposed map that looks perfectly reasonable.
+
+### Open debt: the direction of the score
+
+`Detector.predict` documents "the higher the value, the stronger the evidence"
+and `SAM.predict` returns an angle, where **lower is more similar**.
+
+**It is deliberately not resolved this week.** Flipping SAM's sign mid-sprint
+would break Track A's pipeline and visualisation without raising any error: the
+maps would still be drawn, with the colour scale reversed. And SAM is not the
+one deviating: document 05 defines the score as the angle, and `viridis_r`,
+`angle_threshold_rad` and the `<=` in `threshold()` already assume that
+direction. The one written for a score no detector produces yet is the contract
+in section 1.2.
+
+The two possible exits:
+
+1. Rewrite the contract to admit scores with a **direction declared by each
+   detector** (a class attribute along the lines of `higher_is_better`).
+2. Normalise every detector to "higher is better". For SAM that would mean
+   returning the cosine instead of the angle, which additionally removes the
+   `arccos` error floor at the extremes, but forces rewriting `threshold`, the
+   configs and the maps.
+
+**Review date: at the close of Week 4, and in any case before the first commit
+of the second detector (Level 2, Random Forest).** From then on the pipeline has
+to compare scores from different algorithms, and needs to know what they mean.

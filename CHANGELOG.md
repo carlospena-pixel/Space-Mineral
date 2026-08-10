@@ -133,7 +133,64 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   título reporte válidos y descartados, y que dibujar un SCL y una máscara de
   formas distintas —dos ventanas distintas del tile— sea un error.
 
+- `tests/test_sam.py` pasa de 4 a 24 tests (Semana 3, Track B). El núcleo es una
+  batería de ángulos cuyo valor exacto se conoce **por construcción
+  geométrica** —ortogonal → π/2, `[1,0]` contra `[1,1]` → π/4, `[1,0,0]` contra
+  `[1,1,√2]` → π/3, `[1,0]` contra `[√3,1]` → π/6, antiparalelo → π— y no por
+  comparación contra otra implementación de SAM: dos implementaciones que
+  coinciden solo demuestran que coinciden, incluso si ambas se equivocan igual.
+  Los casos exactos se verifican a `1e-12` y no al `1e-6` por defecto, porque
+  una tolerancia holgada de más deja pasar justo lo que estos tests buscan; los
+  dos que caen en los extremos de `arccos` van a `1e-7` por el piso de error
+  intrínseco de esa función en ±1. Se suman un test-oráculo que compara la
+  versión vectorizada contra un bucle `for` ingenuo sobre un cubo no cuadrado
+  (un `einsum` con los ejes mal escritos no lanza nada: devuelve un mapa
+  transpuesto que se ve razonable), la invariancia a escala en versión fuerte
+  —cada píxel por un factor distinto—, el rango `[0, π]`, la simetría
+  `θ(x, r) == θ(r, x)`, la independencia del `dtype` de entrada, un test por
+  cada `ValueError` nuevo, y el contrato de bandas con el pipeline escrito como
+  test: 9 contra 9 pasa, 12 contra 9 falla.
+- `docs/*/decisiones_tecnicas.md` sección 8: el detector SAM. La fórmula y su
+  contraste término a término contra el documento 05, la tabla de validaciones,
+  la medición de precisión con los números a la vista, y la deuda de dirección
+  del puntaje con fecha de revisión.
+
 ### Changed
+- `SAM.predict` deja de fallar en silencio (Semana 3, Track B). Antes devolvía
+  basura plausible o reventaba desde dentro de `np.einsum` con un mensaje sobre
+  dimensiones de operandos que no menciona ni bandas ni firmas. Ahora lanza
+  `ValueError` ante: cubo y firma con distinto número de bandas —nombrando **los
+  dos largos**, porque el cruce concreto es `BAND_ORDER` (12) contra `SAM_BANDS`
+  (9) y el pipeline lo vuelve cotidiano—, cubo que no es 3D, firma que no es 1D
+  (una firma `(n, 1)` hacía broadcast y devolvía un mapa de la forma equivocada
+  con valores plausibles), y firma degenerada, sea de norma cero —mismo criterio
+  que `normalize_signature`— o con `NaN`, que volvía `NaN` el mapa completo y lo
+  hacía indistinguible de una escena enteramente enmascarada.
+  **No cambia** la firma `predict(cube, reference)`, ni el sentido del puntaje
+  (ángulo en radianes, menor = más parecido), ni la tolerancia a `NaN` en el
+  cubo: un cubo enmascarado con `apply_mask` es la entrada normal del detector.
+- `SAM.predict` acumula el producto punto y la norma en `float64` vía el
+  parámetro `dtype` de `np.einsum`, que fija el acumulador **sin castear el
+  cubo**. Medido, no supuesto: acumulando en `float32` el error contra el cálculo
+  en `float64` puro llegaba a 4,5 × 10⁻⁴ rad sobre píxeles casi idénticos a la
+  firma, donde el ángulo verdadero era 1,3 × 10⁻⁵ rad —o sea 35 veces más chico
+  que su propio error, y ese es justo el régimen de una detección—. Con el
+  acumulador en `float64` baja a 3,9 × 10⁻⁸ rad, exactamente lo mismo que
+  castear el cubo entero, y sin costo de memoria: el cubo real
+  `(12, 2000, 2000)` sigue ocupando 183 MB en vez de los 366 MB de un `astype`.
+- Se documentan dos comportamientos que ya existían pero no estaban escritos ni
+  cubiertos: un píxel de norma cero devuelve `NaN` (devolver 0 lo declararía
+  coincidencia perfecta y lo pintaría como la detección más fuerte del mapa), y
+  `threshold()` descarta los `NaN` por la semántica de IEEE-754 y no por código,
+  de modo que un `np.nan_to_num` «de limpieza» los convertiría en detecciones.
+- `Detector.predict` deja anotada como deuda la contradicción de dirección del
+  puntaje: el contrato dice «a mayor valor, mayor evidencia» y SAM devuelve un
+  ángulo, donde menor es más parecido. **Solo se toca el texto, no el código.**
+  Invertir el signo a mitad de sprint rompería el pipeline y la visualización
+  del Track A sin lanzar ningún error. Y SAM no es el que se desvía: el
+  documento 05 define el puntaje como el ángulo, y `viridis_r`,
+  `angle_threshold_rad` y el `<=` de `threshold()` ya asumen esa dirección.
+  Revisar antes del segundo detector.
 - CI: se agrega el job `lint`, que corre `pre-commit` (black, ruff, isort,
   nbstripout) sobre todos los archivos. El workflow decía que el paso se
   agregaría cuando `pre-commit run --all-files` pasara limpio; ya pasa. Va como
