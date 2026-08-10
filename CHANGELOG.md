@@ -154,6 +154,61 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   contraste término a término contra el documento 05, la tabla de validaciones,
   la medición de precisión con los números a la vista, y la deuda de dirección
   del puntaje con fecha de revisión.
+- `pipeline.py`: `run_pipeline(config)` implementado (era un stub). Encadena el
+  hito de la Semana 3 completo —resolver el `Scene`, enmascarar, subconjuntar a
+  `SAM_BANDS`, pedir la firma, correr el detector, escribir el GeoTIFF y el
+  heatmap— y devuelve un `dict` con las rutas escritas y las estadísticas en
+  vez de `None`: la función entrega datos y el script de CLI imprime. El
+  detector se instancia desde `algorithm.name` a través del registro
+  `DETECTORS`, así que el flujo no nombra a SAM en ninguna otra parte; agregar
+  Random Forest es una clase y una entrada en ese diccionario. Primer consumidor
+  de `SAM_BANDS` y de `aoi.window_px`, que estaban declarados sin que nadie los
+  leyera.
+- `io/raster_io.py`: `write_geotiff()` implementado (era un stub). Acepta un
+  mapa 2D o un cubo 3D, escribe `float32` con `deflate`, `tiled`, el CRS y la
+  `transform` del `Scene`, y `NaN` como nodata —un ángulo de 0 rad es
+  coincidencia perfecta con la firma, así que usar 0 como centinela convertiría
+  los píxeles enmascarados en las detecciones más fuertes del mapa—. Valida la
+  forma espacial contra la del `Scene`: sin esa comprobación, un mapa calculado
+  sobre otra ventana produce un GeoTIFF impecable, georreferenciado sobre el
+  terreno equivocado, que no falla nunca. No escribe ningún tag propio (fecha,
+  usuario, ruta), de modo que dos corridas dan el mismo archivo byte a byte y la
+  reproducibilidad se comprueba comparando hashes. `read_scene()` sigue siendo
+  un stub: es la contraparte de leer un `Scene` desde GeoTIFF y no bloquea nada.
+- `visualization/maps.py`: `plot_score_map()` implementado (era un stub). Dos
+  paneles: el mapa de ángulos con los ejes en coordenadas del CRS derivadas de
+  `scene.transform` —no en índices de píxel, que no se pueden cruzar con
+  ninguna otra capa— y el histograma de los ángulos válidos, que es el
+  entregable de coherencia espectral: una cola hacia los ángulos bajos es
+  evidencia de que el detector separa algo, y una campana simétrica es ruido con
+  aspecto de resultado. La escala de color se recorta a los percentiles 2–98
+  reusando las constantes del módulo, y los percentiles se calculan con
+  `np.nanpercentile`: con `np.percentile` un solo `NaN` deja el panel entero
+  plano sin lanzar nada.
+- `scripts/run_pipeline.py`: acepta el config como `--config` además de la forma
+  posicional con que nació, con error explícito si se pasan las dos o ninguna
+  —elegir una en silencio correría el experimento con un config que nadie
+  pidió—. Nuevo `--no-cache`, que reconstruye el `Scene` desde el `.SAFE`
+  ignorando `data/interim/` (y sin sobrescribirlo).
+- `outputs/maps/kaolinite_sam_angle.tif` y
+  `outputs/figures/kaolinite_sam_angle.png`: las salidas del hito. El GeoTIFF no
+  se versiona (regenerable y pesa 13 MB); el PNG sí, como el resto de las
+  figuras.
+- `tests/test_raster_io.py`: round-trip de `write_geotiff` (CRS, `transform`,
+  dtype, nodata y valores leídos con `rasterio.open`), supervivencia de los
+  `NaN`, escritura multibanda con descripciones, los tres `ValueError` y el test
+  de reproducibilidad: dos escrituras del mismo mapa dan archivos con el mismo
+  SHA-256.
+- `tests/test_pipeline.py`: las tres piezas que el orquestador resuelve antes de
+  tocar disco, extraídas a funciones propias para poder probarlas sin la escena
+  —el registro de detectores, el resolutor de AOI (`window_px` sobre `bbox`) y
+  la normalización de `scene.path`—.
+- `tests/test_maps.py`: siete tests más para `plot_score_map`. Cubren que
+  devuelva los dos paneles, que el colorbar declare el radián, que los ejes
+  salgan en coordenadas del CRS, que un mapa con `NaN` no deje los límites del
+  color en `NaN`, que la escala se recorte por percentiles, que el histograma
+  cuente solo los píxeles válidos y que un mapa de forma distinta a la del
+  `Scene` sea un error.
 
 ### Changed
 - `SAM.predict` deja de fallar en silencio (Semana 3, Track B). Antes devolvía
@@ -191,6 +246,48 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   documento 05 define el puntaje como el ángulo, y `viridis_r`,
   `angle_threshold_rad` y el `<=` de `threshold()` ya asumen esa dirección.
   Revisar antes del segundo detector.
+- `pipeline.py` normaliza `scene.path` antes de buscar el producto: los configs
+  apuntan a la carpeta `.SAFE` misma y `find_safe_dir(root)` busca carpetas
+  `.SAFE` *bajo* `root`, así que pasarle la ruta del producto no encontraba nada
+  y abortaba con un `FileNotFoundError` que culpaba a la escena de no estar
+  descargada cuando estaba justo ahí. Era un bug latente: nadie lo había
+  disparado porque nadie leía `scene.path` todavía. Se arregla en el pipeline y
+  no en `find_safe_dir`, que ya tiene tests y otros consumidores.
+- El `Scene` se cachea en `data/interim/scene.npz`, pero el caché **se verifica
+  antes de usarse**: solo se reutiliza si su ventana y sus bandas son las que
+  pide el config, y lo que no se pueda verificar (un AOI dado como `bbox`, un
+  `.npz` sin `meta["aoi_window"]`) cuenta como no coincidente y se relee el
+  producto. Un caché usado a ciegas es el peor modo de fallo del proyecto: el
+  pipeline corre entero, escribe un GeoTIFF válido y el mapa es de otro AOI.
+  `meta` sigue siendo documentación y no configuración —el AOI viene del config
+  en todos los caminos—: lo único que puede hacer acá es vetar el caché.
+- `configs/default.yaml`: `output` gana `maps_dir: outputs/maps/` y
+  `figures_dir: outputs/figures/`. `configs/tamarugal_kaolinite.yaml` declara
+  los nombres de salida del experimento (`angle_map`, `heatmap`).
+  El roadmap nombra este archivo `chuqui_kaolinite.yaml`; el renombre a
+  `tamarugal_kaolinite.yaml` fue deliberado cuando la zona cambió de
+  Chuquicamata a Pampa del Tamarugal, y está documentado en la cabecera del
+  propio YAML. No se crea ningún `chuqui_kaolinite.yaml`.
+- `.gitignore`: `outputs/maps/` existe en un clon limpio vía `.gitkeep` para que
+  el pipeline pueda escribir ahí sin crearla, pero sus `.tif` no se versionan.
+  Mismo patrón que ya usaba `outputs/scratch/`.
+- `docs/es/pipeline.md` y `docs/en/pipeline.md`: las etapas 8 y 10 pasan de
+  «pendiente» a «implementada» en la tabla de estado, con el flujo real de
+  `run_pipeline` descrito en el mismo formato Entra / Sale / La decisión no
+  obvia de las etapas 1 a 7, más un diagrama de `Config` a mapa y la fila del
+  comando en «Cómo se corre». «Lo que falta» queda solo con la etapa 9, que es
+  justamente lo que impide llamar «detección de caolinita» al mapa.
+- `README.md`: el quickstart invoca con `--config`, y «Resultados» reemplaza
+  «Detección: pendiente» por las cifras medidas sobre el AOI completo —mínimo
+  0,0723 rad, mediana 0,2742, máximo 0,6971— y el barrido de umbrales. **El
+  umbral `0.1` del config sí deja píxeles bajo él en el AOI completo: 62 de
+  3.999.908 (0,002 %).** La cifra de «ni un solo píxel» que traían el README y
+  `pipeline.md` viene de `decisiones_tecnicas.md` §7, donde la medición se hizo
+  sobre una ventana de 256 × 256 px (0 de 65.536): sigue siendo cierta para esa
+  ventana y no se generaliza al AOI de 2000 × 2000. Aun así el repositorio no
+  reporta caolinita detectada: 62 píxeles sueltos de 4 millones no son una
+  detección, el ángulo espectral mide parecido con una firma de laboratorio y no
+  presencia de un mineral, y la validación contra cartografía sigue sin existir.
 - CI: se agrega el job `lint`, que corre `pre-commit` (black, ruff, isort,
   nbstripout) sobre todos los archivos. El workflow decía que el paso se
   agregaría cuando `pre-commit run --all-files` pasara limpio; ya pasa. Va como
