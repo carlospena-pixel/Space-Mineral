@@ -5,6 +5,7 @@ tests/test_maps.py. Los archivos se escriben en el tmp_path de pytest.
 """
 
 import hashlib
+import struct
 
 import numpy as np
 import pytest
@@ -13,6 +14,20 @@ from affine import Affine
 from rasterio.crs import CRS
 
 from mineralmap.io.raster_io import Scene, write_geotiff
+
+# Tags TIFF que meten procedencia variable en el archivo. Ninguno cambia lo que
+# vale un pixel, y todos rompen la comparacion por hash entre dos corridas del
+# mismo experimento, que es como se comprueba la reproducibilidad (E1).
+TAGS_PROHIBIDOS: dict[int, str] = {
+    269: "DocumentName",
+    271: "Make",
+    272: "Model",
+    305: "Software",
+    306: "DateTime",
+    315: "Artist",
+    700: "XMP",
+    33432: "Copyright",
+}
 
 # Transform de un AOI plausible: origen en UTM 19S y pixel de 20 m, que es la
 # grilla objetivo del proyecto. La identidad serviria para los asserts, pero
@@ -34,6 +49,34 @@ def _scene_sintetico(alto: int = 4, ancho: int = 6) -> Scene:
 
 def _sha256(path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _tags_del_tiff(path) -> set[int]:
+    """Devuelve los codigos de tag presentes en todos los IFD del TIFF.
+
+    Se parsea el archivo a mano en vez de preguntarle a rasterio porque
+    rasterio expone los tags que GDAL decide mostrar, no los bytes que estan
+    escritos. Lo que este test tiene que comprobar es lo segundo.
+    """
+    datos = path.read_bytes()
+
+    orden = "<" if datos[:2] == b"II" else ">"
+    (magia,) = struct.unpack(orden + "H", datos[2:4])
+    assert magia == 42, f"no es un TIFF clasico (magia {magia})"
+
+    tags: set[int] = set()
+    (offset,) = struct.unpack(orden + "I", datos[4:8])
+
+    while offset:
+        (n_entradas,) = struct.unpack(orden + "H", datos[offset : offset + 2])
+        for i in range(n_entradas):
+            inicio = offset + 2 + i * 12
+            (tag,) = struct.unpack(orden + "H", datos[inicio : inicio + 2])
+            tags.add(tag)
+        fin = offset + 2 + n_entradas * 12
+        (offset,) = struct.unpack(orden + "I", datos[fin : fin + 4])
+
+    return tags
 
 
 def test_el_geotiff_conserva_crs_transform_dtype_y_valores(tmp_path):
@@ -158,3 +201,32 @@ def test_dos_escrituras_del_mismo_mapa_dan_archivos_identicos(tmp_path):
     write_geotiff(str(segunda), mapa, scene, band_descriptions=["angulo"])
 
     assert _sha256(primera) == _sha256(segunda)
+
+
+def test_el_geotiff_no_lleva_tags_de_fecha_usuario_ni_software(tmp_path):
+    """Los tags de procedencia variable no pueden estar en el archivo.
+
+    El test anterior compara dos escrituras hechas en la misma corrida y con la
+    misma version de GDAL, asi que pasaria igual aunque el archivo llevara la
+    fecha: dos escrituras consecutivas caen en el mismo segundo. Este mira los
+    bytes y nombra el tag, que es lo que hace accionable el fallo.
+
+    Sin esta comprobacion, la promesa de reproducibilidad de `write_geotiff`
+    vive solo en su comentario, y basta con que una version futura de GDAL
+    empiece a escribir DateTime por defecto para que E1 deje de sostenerse sin
+    que nadie lo note: el mapa seguiria siendo correcto y el hash cambiaria en
+    cada corrida.
+    """
+    scene = _scene_sintetico()
+    ruta = tmp_path / "sin_tags.tif"
+
+    write_geotiff(str(ruta), np.zeros((4, 6)), scene, band_descriptions=["angulo"])
+
+    presentes = _tags_del_tiff(ruta)
+    encontrados = {
+        codigo: nombre
+        for codigo, nombre in TAGS_PROHIBIDOS.items()
+        if codigo in presentes
+    }
+
+    assert not encontrados, f"el GeoTIFF trae tags de procedencia: {encontrados}"
