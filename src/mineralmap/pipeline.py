@@ -14,8 +14,8 @@ import numpy as np
 from rasterio.windows import Window
 
 from mineralmap.algorithms.base import Detector
-from mineralmap.algorithms.sam import SAM, threshold
-from mineralmap.config import SAM_BANDS, Config
+from mineralmap.algorithms.sam import SAM
+from mineralmap.config import Config
 from mineralmap.io.raster_io import Scene, load_scene, save_scene, write_geotiff
 from mineralmap.preprocessing.masking import apply_mask
 from mineralmap.preprocessing.scene_builder import (
@@ -28,14 +28,27 @@ from mineralmap.visualization.maps import plot_score_map
 # Registro de detectores: `algorithm.name` del YAML -> clase que implementa
 # `Detector`. Es el mecanismo de escalabilidad del proyecto (decisiones
 # tecnicas 1.2): pasar a Random Forest tiene que ser agregar una clase y una
-# entrada aca, no reescribir el flujo. Por eso el pipeline no menciona SAM en
-# ninguna otra parte del encadenado.
+# entrada aca, no reescribir el flujo.
+#
+# Para que eso sea cierto, el encadenado le pregunta al detector todo lo que
+# antes daba por sentado de SAM: que bandas consume (`detector.bands`) y en que
+# direccion apunta su puntaje (`detector.detects`). Este modulo no importa
+# SAM_BANDS ni `threshold`, y esa ausencia es la prueba de que el acoplamiento
+# se fue. Lo que quedaba antes no fallaba ruidosamente: un detector que
+# devolviera evidencia maxima en todo el AOI se reportaba como cero
+# detecciones, porque el `<=` de SAM se aplicaba a cualquier puntaje.
 DETECTORS: dict[str, type[Detector]] = {"sam": SAM}
 
 # Umbrales del barrido que acompana al resumen. No son candidatos a
 # configuracion: son la evidencia de que el umbral del config es uno de muchos
 # y de cuantos pixeles caeria bajo cada uno. Sin este barrido, un resultado de
 # cero detecciones no se distingue de un error de calculo.
+#
+# Siguen expresados en radianes, o sea que son especificos del angulo espectral
+# igual que la clave `angle_threshold_rad` del config. Generalizarlos antes de
+# saber que unidades trae el segundo detector seria especular; lo que importa
+# es que ninguno de los dos produce un resultado equivocado en silencio, porque
+# la comparacion la hace `detector.detects`. Ver decisiones tecnicas seccion 8.
 THRESHOLD_SWEEP: tuple[float, ...] = (0.05, 0.08, 0.10, 0.15, 0.20)
 
 # Cache del Scene. Es el mismo archivo que escribe scripts/construir_scene.py:
@@ -291,20 +304,24 @@ def _estadisticas_del_mapa(score_map: np.ndarray) -> dict[str, float]:
 
 
 def _barrido_de_umbrales(
-    score_map: np.ndarray, mask: np.ndarray
+    score_map: np.ndarray, mask: np.ndarray, detector: Detector
 ) -> dict[float, dict[str, float]]:
     """Pixeles y porcentaje del AOI valido bajo cada umbral del barrido.
 
-    El `& mask` no es redundante con los NaN: `threshold` compara con `<=`, y
-    una comparacion contra NaN devuelve False, pero dejarlo explicito hace que
-    el porcentaje se lea siempre contra el mismo denominador (los validos) y
-    no contra el AOI entero.
+    La comparacion la hace `detector.detects` y no un `<=` escrito aca: el
+    sentido del umbral depende de la direccion que declare el detector, y
+    fijarlo en el pipeline reportaba cero detecciones para cualquier detector
+    donde mayor es mejor, sin lanzar nada.
+
+    El `& mask` no es redundante con los NaN: toda comparacion contra NaN es
+    falsa, pero dejarlo explicito hace que el porcentaje se lea siempre contra
+    el mismo denominador (los validos) y no contra el AOI entero.
     """
     validos = int(mask.sum())
     barrido: dict[float, dict[str, float]] = {}
 
     for umbral in THRESHOLD_SWEEP:
-        detectados = int((threshold(score_map, umbral) & mask).sum())
+        detectados = int((detector.detects(score_map, umbral) & mask).sum())
         barrido[umbral] = {
             "pixels": detectados,
             "pct": 100.0 * detectados / validos if validos else 0.0,
@@ -377,10 +394,17 @@ def _guardar_heatmap(
 def run_pipeline(config: Config, use_cache: bool | None = None) -> dict[str, Any]:
     """Corre el experimento completo descrito por `config` y escribe sus salidas.
 
-    Encadena: resolver el Scene (cache o `.SAFE`) -> enmascarar y subconjuntar
-    a SAM_BANDS -> firma de referencia -> detector -> GeoTIFF + heatmap. El
-    detector se instancia desde `algorithm.name` a traves de DETECTORS, asi que
-    el flujo no sabe que algoritmo esta corriendo.
+    Encadena: resolver el Scene (cache o `.SAFE`) -> enmascarar -> subconjuntar
+    a las bandas que declara el detector -> firma de referencia en ese mismo
+    orden -> detector -> GeoTIFF + heatmap.
+
+    El flujo no sabe que algoritmo esta corriendo: lo instancia desde
+    `algorithm.name` a traves de DETECTORS y despues le pregunta lo que
+    necesita saber. `detector.bands` fija el subconjunto del cubo y el orden de
+    la firma; `detector.detects` decide de que lado del umbral cae una
+    deteccion. Las dos cosas estaban fijadas a SAM, y la segunda fallaba en
+    silencio: un detector donde mayor es mejor se reportaba con cero
+    detecciones bajo todos los umbrales.
 
     Parameters
     ----------
@@ -401,6 +425,8 @@ def run_pipeline(config: Config, use_cache: bool | None = None) -> dict[str, Any
     ------
     KeyError
         Si `algorithm.name` no esta registrado, o si el mineral no tiene firma.
+    ValueError
+        Si el detector declara en `bands` alguna banda que el Scene no trae.
     FileNotFoundError
         Si no hay producto `.SAFE` bajo `scene.path` y el cache no sirve.
     """
@@ -410,16 +436,36 @@ def run_pipeline(config: Config, use_cache: bool | None = None) -> dict[str, Any
     # crudo y la validez aparte, y aplicarla es decision del consumidor.
     cubo = apply_mask(scene.cube, scene.mask)
 
-    # Subconjunto a las 9 bandas del detector. Por indice y no por nombre: el
-    # contrato del cubo es posicional (decisiones tecnicas 1.1), y es el mismo
-    # orden con que se pide la firma abajo.
-    indices = [scene.band_names.index(banda) for banda in SAM_BANDS]
+    # El detector se instancia ANTES de subconjuntar porque es el que dice que
+    # bandas quiere. Antes el pipeline recortaba a SAM_BANDS incondicionalmente
+    # y un detector con otras necesidades espectrales recibia igual esas nueve.
+    detector = _crear_detector(config.algorithm.get("name", ""))
+    bandas = list(detector.bands) if detector.bands else list(scene.band_names)
+
+    # `list.index` lanza "'B99' is not in list", que es ruidoso pero anonimo:
+    # no dice quien pidio esa banda ni contra que Scene. Es la superficie que
+    # estrena `detector.bands`, y el repositorio ya se exige nombrar el origen
+    # en `_crear_detector` y en `find_band_file`.
+    faltantes = [banda for banda in bandas if banda not in scene.band_names]
+    if faltantes:
+        raise ValueError(
+            f"El detector {type(detector).__name__} declara en `bands` las "
+            f"bandas {faltantes}, que no estan en el Scene "
+            f"({scene.band_names}). Revisa el atributo `bands` del detector o "
+            f"las bandas que pide el config en `scene.bands`."
+        )
+
+    # El subconjunto va por indice y la firma por nombre, con la misma lista:
+    # el contrato del cubo es posicional (decisiones tecnicas 1.1) y son dos
+    # caminos distintos hacia la misma banda. Si divergieran, el detector
+    # compararia la reflectancia de una banda contra la referencia de otra y
+    # devolveria un mapa perfectamente calculado y sin sentido.
+    indices = [scene.band_names.index(banda) for banda in bandas]
     cubo = cubo[indices].astype(np.float64)
 
     mineral = config.mineral.get("target")
-    referencia = get_reference_spectrum(mineral, band_order=SAM_BANDS)
+    referencia = get_reference_spectrum(mineral, band_order=bandas)
 
-    detector = _crear_detector(config.algorithm.get("name", ""))
     puntajes = detector.predict(cubo, referencia)
 
     # NaN donde el pixel es invalido. El detector ya propaga los NaN del cubo,
@@ -457,12 +503,14 @@ def run_pipeline(config: Config, use_cache: bool | None = None) -> dict[str, Any
         "mineral": mineral,
         "algorithm": config.algorithm.get("name"),
         "shape": tuple(int(v) for v in puntajes.shape),
-        "bands": list(SAM_BANDS),
+        "bands": bandas,
         "valid_px": int(scene.mask.sum()),
         "angle": _estadisticas_del_mapa(puntajes),
-        "threshold_sweep": _barrido_de_umbrales(puntajes, scene.mask),
+        "threshold_sweep": _barrido_de_umbrales(puntajes, scene.mask, detector),
         "threshold_rad": umbral_config,
-        "detected_px": int((threshold(puntajes, umbral_config) & scene.mask).sum()),
+        "detected_px": int(
+            (detector.detects(puntajes, umbral_config) & scene.mask).sum()
+        ),
     }
 
     _imprimir_resumen(resultado)
