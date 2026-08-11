@@ -22,9 +22,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - `Scene.meta`: trazabilidad del producto de origen (tile, fecha, baseline,
   offset, ventana AOI, resolución nativa por banda y composición SCL del AOI),
   serializada como JSON en el `.npz`.
-- `SAM_BANDS` en `config.py`: declara las 9 bandas que consumirá el detector
-  espectral (excluye B1 y B9, atmosféricas, y B8, redundante con B8A). Solo
-  declarado, sin consumidores todavía; cubierto por `tests/test_config.py`.
+- `SAM_BANDS` en `config.py`: declara las 9 bandas que consume el detector
+  espectral (excluye B1 y B9, atmosféricas, y B8, redundante con B8A). Se
+  declaró en la Semana 2 sin consumidores —la decisión escrita y testeada antes
+  de que existiera el pipeline, cubierta por `tests/test_config.py`— y desde la
+  Semana 3 lo consume `SAM`, que lo declara como su atributo `bands`.
 - Longitudes de onda como dato del proyecto (Semana 2, Track B):
   `BAND_WAVELENGTHS_NM`, `BAND_FWHM_NM` y el helper `band_wavelengths()` en
   `config.py`, con tablas separadas para S2A y S2B y `DEFAULT_PLATFORM = "S2B"`
@@ -179,9 +181,9 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   paneles: el mapa de ángulos con los ejes en coordenadas del CRS derivadas de
   `scene.transform` —no en índices de píxel, que no se pueden cruzar con
   ninguna otra capa— y el histograma de los ángulos válidos, que es el
-  entregable de coherencia espectral: una cola hacia los ángulos bajos es
-  evidencia de que el detector separa algo, y una campana simétrica es ruido con
-  aspecto de resultado. La escala de color se recorta a los percentiles 2–98
+  entregable de coherencia espectral: lo que hay que mirar en él es si el
+  extremo que interesa está sobrepoblado respecto de una campana, no hacia
+  dónde cae la cola larga. La escala de color se recorta a los percentiles 2–98
   reusando las constantes del módulo, y los percentiles se calculan con
   `np.nanpercentile`: con `np.percentile` un solo `NaN` deja el panel entero
   plano sin lanzar nada.
@@ -211,6 +213,106 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   `Scene` sea un error.
 
 ### Changed
+
+#### Cierre de la Semana 3: seis defectos de documentación y arquitectura
+
+- **El pipeline decía no conocer a SAM, y lo nombraba en cinco lugares.**
+  `pipeline.py` afirmaba «el pipeline no menciona SAM en ninguna otra parte del
+  encadenado» mientras importaba `SAM_BANDS` y `threshold`, recortaba el cubo a
+  las nueve bandas de SAM incondicionalmente y binarizaba con el `<=` del
+  ángulo. **Qué fallaba**: un detector que respetara el contrato de `base.py`
+  —a mayor valor, mayor evidencia— y devolviera 0,9 en todo el AOI, o sea
+  evidencia máxima, hacía que el barrido reportara cero píxeles bajo los cinco
+  umbrales sin lanzar nada; y recibía las bandas de SAM aunque necesitara otras.
+  Se habría descubierto el día del primer commit de Random Forest, con el
+  pipeline entero corriendo y reportando cero. **Qué se hizo**: `Detector` gana
+  `higher_is_better`, `bands` y el método `detects()`; `SAM` declara `False` y
+  sus nueve bandas; el pipeline instancia el detector antes de subconjuntar y le
+  pregunta las dos cosas. `threshold()` se conserva intacta —es pública y tiene
+  tests—, solo dejó de usarla el pipeline. `SAM_BANDS` ya no se importa en
+  `pipeline.py`, y esa ausencia es la prueba de que el acoplamiento se fue. La
+  salida no cambia un solo píxel: `higher_is_better = False` es exactamente lo
+  que el flujo asumía.
+- **La cola del histograma estaba descrita al revés.** El README, los dos
+  `pipeline.md`, el docstring de `plot_score_map` y este mismo archivo decían
+  «una cola hacia los ángulos bajos, no la campana simétrica que daría el
+  ruido». Medido: la asimetría es **+0,7586** y la cola larga va hacia los
+  ángulos **altos**. **Qué fallaba**: la evidencia de coherencia espectral del
+  hito estaba justificada con una propiedad que los datos no tienen, y quien
+  mirara la figura vería lo contrario de lo escrito. **Qué se hizo**: se
+  reemplaza por la afirmación correcta, que además es más fuerte —0,1 rad está
+  a 5,2 desviaciones estándar bajo la media, donde una gaussiana daría 0,43
+  píxeles en 4 millones y hay 62, o sea 143 veces el ruido— y en el docstring
+  por su forma general: el histograma sirve para ver si el extremo que interesa
+  está sobrepoblado respecto de una campana, no hacia dónde cae la cola larga.
+- **La figura `kaolinite_signature_vs_pixel.png` se presentaba sin acotar su
+  ventana.** El README decía «dos píxeles reales del AOI», y el notebook que la
+  produce usa la ventana de exploración de 256 × 256 px: su píxel de menor
+  ángulo tiene 0,1640 rad, mientras que el del AOI de 2000 × 2000 tiene 0,0723
+  y está en (1757, 667). **Qué fallaba**: es exactamente el error que la sección
+  7 declara prohibido —«toda cifra de ángulo tiene que decir sobre qué ventana
+  se midió»— cometido tres filas más abajo de la tabla que define el AOI como
+  los 2000 × 2000. **Qué se hizo**: se acota a la ventana del notebook y se
+  nombra el ángulo del píxel a la vista.
+- **La conclusión sobre la caída B11 → B12 era falsa a la escala del AOI.** El
+  README decía «ninguno de los dos píxeles acompaña la caída B11 → B12». Medido:
+  los 62 píxeles bajo 0,1 rad descienden **los 62** (razón B12/B11 mediana
+  0,679) contra un fondo con mediana 1,011 donde solo el 44 % desciende algo, y
+  el píxel de la propia figura también desciende, apenas (0,944 contra el 0,507
+  de la firma USGS). **Qué se hizo**: en el README, el matiz correcto —el píxel
+  no reproduce la caída *pronunciada*, no que no caiga—; y en la sección 7 de
+  los dos documentos de decisiones técnicas, el hallazgo que no estaba escrito
+  en ninguna parte: los 62 están sobre suelo desnudo (SCL 5 los 62), con
+  reflectancia media 0,391 contra 0,229 del fondo, en 26 componentes conexas,
+  ninguno a menos de 7 px del borde, y con la mediana del vecindario de 5 × 5
+  sin el píxel central en 0,1394 rad contra 0,2742 de la escena —38 de los 62
+  con ese vecindario también bajo 0,15—. El estadístico va nombrado porque
+  cambia la respuesta: la media del mismo vecindario da 0,1522 y 28 de 62.
+  Encabezado dejando claro que **sigue sin ser una detección**: la dirección de
+  un rasgo de absorción no identifica un mineral mientras la etapa 9 no exista.
+- **Pedir una banda que el `Scene` no trae fallaba con un mensaje anónimo.** Es
+  la superficie que estrenó `detector.bands`: `scene.band_names.index(banda)`
+  lanzaba `'B99' is not in list`, que es ruidoso —no es un fallo silencioso—
+  pero no dice quién pidió esa banda ni cuáles hay disponibles, así que había
+  que abrir el código para ubicar el problema. El repositorio ya se exige lo
+  contrario en `_crear_detector` y en `find_band_file`. **Qué se hizo**: un
+  `ValueError` previo que nombra la clase del detector, las bandas que faltan y
+  las que el `Scene` sí trae, y apunta a los dos sitios donde puede estar el
+  error (el atributo `bands` o `scene.bands` del config).
+- **`SAM_BANDS` seguía titulado «declarado y todavía no consumido».** Lo consume
+  el pipeline desde la Semana 3, y este archivo lo afirmaba y lo negaba con 25
+  líneas de diferencia. **Qué se hizo**: se retitula a «consumidas por el
+  detector desde la Semana 3» en los dos documentos, se corrige el cuerpo, se
+  reconcilia la entrada contradictoria de este CHANGELOG y se actualizan los dos
+  enlaces que apuntaban al ancla vieja, que si no quedaban rotos.
+- **El invariante de `Scene.meta` estaba escrito más fuerte de lo que el código
+  cumple.** Cuatro documentos decían «nada del pipeline lee de `meta` para
+  decidir qué hacer», y el pipeline lee `meta["aoi_window"]` para vetar el caché
+  y `tile_id`/`sensing_date` para el título de la figura. **Qué se hizo**: el
+  código está bien y no se toca; se lleva a los cuatro documentos la versión
+  precisa que ya vivía en el docstring de `_cache_coincide` —nada del pipeline
+  *toma de `meta` un parámetro que decida qué se calcula*, el AOI viene del
+  config en todos los caminos y lo único que `meta` puede hacer es **vetar** el
+  caché— y se menciona además el uso cosmético del título.
+- **El `.npz` no es reproducible byte a byte** y no estaba dicho en ninguna
+  parte. `meta["created_at"]` hace que dos reconstrucciones del mismo AOI den
+  hashes distintos aunque el cubo sea idéntico. No afecta a E1 —el `.tif` sí
+  sale idéntico— y el `created_at` se conserva a propósito, porque la
+  procedencia vale más que un hash que nadie compara. Se anota en la etapa 6 de
+  los dos `pipeline.md` para que nadie use ese hash como identidad de contenido.
+- `scripts/verificar_cifras.py`: CLI que recalcula desde el `.tif` las cifras
+  que publican el README y la sección 7, las parsea de los propios documentos
+  —tolerando la coma decimal del ES y el punto del EN, y los separadores de
+  miles de los dos— y sale con código 1 si alguna no calza. Existe porque que
+  las cifras coincidan con la corrida era una comprobación manual que ya falló
+  una vez. No escribe nada y no va en CI: necesita la escena, que el runner de
+  GitHub no tiene.
+- Tests de regresión de todo lo anterior: que el pipeline respete la dirección
+  declarada por el detector y subconjunte con las bandas que declara, que
+  `detects` herede el sentido del contrato y no cuente los `NaN`, los cinco
+  casos de `_cache_coincide`, y que el GeoTIFF no lleve los tags TIFF de fecha,
+  usuario, software ni XMP —promesa que hasta ahora vivía solo en un comentario
+  y que es la que sostiene E1—.
 - `SAM.predict` deja de fallar en silencio (Semana 3, Track B). Antes devolvía
   basura plausible o reventaba desde dentro de `np.einsum` con un mensaje sobre
   dimensiones de operandos que no menciona ni bandas ni firmas. Ahora lanza
