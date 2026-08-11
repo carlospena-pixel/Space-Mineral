@@ -42,8 +42,20 @@ visualización. Por eso `get_reference_spectrum` recibe un `band_order` y
 devuelve un vector alineado con él: el producto punto del SAM asume esa
 alineación y no tiene forma de verificarla.
 
-**`meta` es documentación, no configuración.** Nada del pipeline lee de `meta`
-para decidir qué hacer. Registra de dónde salió el cubo: `safe_name`,
+**`meta` es documentación, no configuración.** El invariante exacto es que
+**nada del pipeline toma de `meta` un parámetro que decida qué se calcula**: el
+AOI, las bandas y el algoritmo vienen del config en todos los caminos. `meta` se
+lee en dos lugares y ninguno lo contradice:
+
+- `_cache_coincide` compara `meta["aoi_window"]` contra la ventana del config.
+  Lo único que `meta` puede hacer ahí es **vetar** el caché; si falta o no
+  calza, el `Scene` se reconstruye desde el `.SAFE`. Nunca aporta el AOI, solo
+  puede rechazar uno cacheado.
+- `_guardar_heatmap` lee `tile_id` y `sensing_date` para el **título de la
+  figura**. Es un uso cosmético: no entra en ningún cálculo, y un `meta` vacío
+  produce la misma figura con el título más corto.
+
+Registra de dónde salió el cubo: `safe_name`,
 `tile_id`, `sensing_date`, `processing_baseline`, `boa_offset`,
 `quantification`, `aoi_window`, `bands_source` (banda → resolución nativa),
 `invalid_scl_classes`, `scl_summary` y `created_at`. Se serializa como JSON
@@ -155,15 +167,21 @@ planillas derivadas y como 118 nm en la fuente). Manda la fuente citada. La
 discrepancia no afecta a nada implementado hoy: el FWHM se declara a la espera
 de `spectral/srf.py` y ningún módulo lo consume.
 
-### `SAM_BANDS` — 9 bandas, declarado y todavía no consumido
+### `SAM_BANDS` — 9 bandas, consumidas por el detector desde la Semana 3
 
 ```
 B2, B3, B4, B5, B6, B7, B8A, B11, B12
 ```
 
-Es el subconjunto que consumirá el detector espectral. Hoy **solo está
-declarado**: ningún módulo lo importa. La razón de declararlo antes de usarlo es
-dejar la decisión escrita y testeada mientras el pipeline no existe.
+Es el subconjunto que consume el detector espectral. Estuvo declarado sin
+consumidores durante la Semana 2 —la decisión se escribió y se testeó antes de
+que existiera el pipeline— y desde la Semana 3 lo consume `run_pipeline`, que
+subconjunta el cubo y pide la firma de referencia con estas nueve bandas.
+
+**Quién lo importa hoy**: `algorithms/sam.py`, donde `SAM` lo declara como su
+atributo `bands`. El pipeline ya no lo importa: le pregunta al detector qué
+bandas quiere en vez de recortar a `SAM_BANDS` incondicionalmente (ver
+[sección 8](#8-el-detector-sam)).
 
 Las tres exclusiones respecto de `BAND_ORDER`, por motivos distintos:
 
@@ -430,6 +448,36 @@ pipeline corre `SAM_BANDS` y es lo único que hay medido a esta escala. No se
 repitió el experimento con `BAND_ORDER` sobre los 4 millones de píxeles, así
 que esa fila no existe y no se estima.
 
+#### Qué son los 62 píxeles: sigue sin ser una detección
+
+Lo que sigue es evidencia a favor, y no alcanza. **La dirección de un rasgo de
+absorción no identifica un mineral** mientras la etapa 9 no exista: sin verdad
+de terreno no hay forma de separar caolinita de cualquier otra superficie que
+descienda entre B11 y B12. Se escribe porque estaba medido y sin registrar, no
+porque cierre nada.
+
+Los 62 píxeles bajo 0,1 rad **reproducen la absorción Al–OH en dirección**:
+
+| | los 62 | fondo (3.999.846 válidos) | firma USGS KGa-1 |
+|---|---|---|---|
+| razón B12/B11 (mediana) | **0,679** | 1,011 | 0,507 |
+| con razón < 1 | **62 de 62** | 44 % | — |
+| reflectancia media, 9 bandas | 0,391 | 0,229 | — |
+| clase SCL | **62 de 62 en 5 (suelo desnudo)** | — | — |
+
+Los 62 descienden de B11 a B12, los 62 caen sobre suelo desnudo y ninguno toca
+el borde del AOI —el más cercano está a 7 px—, así que no son artefactos de
+recorte. Se agrupan en 26 componentes conexas de 8 vecinos, la mayor de 9
+píxeles: son parches, no ruido de un píxel suelto. Y no están aislados en su
+entorno: **la mediana del vecindario de 5 × 5 sin el píxel central** —los 24
+vecinos, con `np.nanmedian`— vale 0,1394 rad contra 0,2742 de la escena, y en
+38 de los 62 ese vecindario también queda bajo 0,15. El estadístico se nombra
+porque cambia la respuesta: con la media del mismo vecindario da 0,1522 y 28
+de 62. El descenso es menos
+pronunciado que el de la firma de laboratorio (0,679 contra 0,507), que es lo
+esperable de un píxel de 20 m donde el mineral, si está, viene mezclado con
+todo lo demás que hay en 400 m².
+
 #### Por qué las dos mediciones difieren tanto
 
 El mínimo pasa de 0,164 a 0,0723 y el umbral de 0,1 pasa de dejar 0 píxeles a
@@ -599,29 +647,57 @@ Hay además un test-oráculo que compara la versión vectorizada contra un bucle
 `einsum`: un `"bhw,b->hw"` mal escrito no lanza nada, devuelve un mapa
 transpuesto que se ve perfectamente razonable.
 
-### Deuda abierta: la dirección del puntaje
+### Resuelto: cada detector declara su dirección y sus bandas
 
-`Detector.predict` documenta «a mayor valor, mayor evidencia» y `SAM.predict`
-devuelve un ángulo, donde **menor es más parecido**.
+`Detector.predict` documentaba «a mayor valor, mayor evidencia» y `SAM.predict`
+devuelve un ángulo, donde **menor es más parecido**. La deuda quedó abierta en
+la Semana 3 con fecha de revisión «al cerrar la Semana 4, y en todo caso antes
+del primer commit del segundo detector». **Se adelantó**, porque la Semana 3
+además publicó una afirmación arquitectónica falsa —`pipeline.py` y esta misma
+sección decían que el flujo no nombra a SAM, y lo nombraba en cinco lugares— y
+la salida honesta era volverla verdadera, no borrar la frase.
 
-**No se resuelve en esta semana, a propósito.** Invertir el signo de SAM a mitad
-de sprint rompería el pipeline y la visualización del Track A sin lanzar ningún
-error: los mapas se seguirían dibujando, con la escala de color al revés. Y SAM
-no es el que se desvía: el documento 05 define el puntaje como el ángulo, y
-`viridis_r`, `angle_threshold_rad` y el `<=` de `threshold()` ya asumen esa
-dirección. El que quedó redactado para un puntaje que ningún detector produce
-todavía es el contrato de la sección 1.2.
+**Se eligió la salida 1**: la dirección la declara cada detector en el atributo
+de clase `higher_is_better`, y quien binariza usa `Detector.detects()`. No se
+eligió normalizar todo a «mayor es mejor» (para SAM, devolver el coseno) por
+tres razones, en orden: el documento 05 del proyecto define el puntaje del SAM
+como el ángulo, y cambiar SAM para que calzara con un contrato interno sería
+invertir la jerarquía de fuentes; el ángulo en radianes es la unidad estándar
+del SAM en la literatura de teledetección, y el coseno pierde la unidad física
+y vuelve el mapa incomparable con cualquier publicación; y `viridis_r`,
+`angle_threshold_rad` y el `<=` de `threshold()` ya están todos del mismo lado,
+mientras que la salida 2 obliga a tocar los tres.
 
-Las dos salidas posibles:
+El cambio **no invierte ningún signo y no mueve un solo píxel** de la salida:
+`SAM` declara `higher_is_better = False`, que es exactamente lo que el pipeline
+asumía. Lo que cambia es que ahora está escrito en vez de supuesto.
 
-1. Reescribir el contrato para admitir puntajes con **dirección declarada por
-   cada detector** (un atributo de clase del tipo `higher_is_better`).
-2. Normalizar todos los detectores a «mayor es mejor». Para SAM sería devolver
-   el coseno en vez del ángulo, lo que además elimina el piso de error de
-   `arccos` en los extremos, pero obliga a reescribir `threshold`, los configs y
-   los mapas.
+**Qué falla arreglaba.** Un detector registrado en `DETECTORS` que respetara el
+contrato —mayor valor, mayor evidencia— y devolviera 0,9 en todo el AOI, o sea
+evidencia máxima, hacía que el barrido reportara cero píxeles bajo los cinco
+umbrales, **sin lanzar nada**, porque el pipeline aplicaba el `<=` de SAM a
+cualquier puntaje. Se habría descubierto el día del primer commit de Random
+Forest, con el pipeline entero corriendo y reportando cero.
 
-**Fecha de revisión: al cerrar la Semana 4, y en todo caso antes del primer
-commit del segundo detector (Nivel 2, Random Forest).** A partir de ahí el
-pipeline tiene que comparar puntajes de algoritmos distintos, y necesita saber
-qué significan.
+Junto con la dirección se declaran las **bandas**: `Detector.bands` dice qué
+bandas consume el detector y en qué orden, y el pipeline subconjunta el cubo y
+pide la firma de referencia con esa lista. Antes recortaba a `SAM_BANDS`
+incondicionalmente, así que un detector con otras necesidades espectrales
+recibía igual esas nueve. `SAM` declara `bands = tuple(SAM_BANDS)`.
+
+`threshold(angle_map, max_angle)` se conserva tal cual: es pública, tiene tests
+y otros consumidores. Lo único que cambió es que el pipeline ya no la usa.
+
+**Lo que no se generalizó, a propósito.** Estas superficies siguen siendo
+específicas del ángulo espectral, y está bien que lo sean mientras no exista el
+segundo detector:
+
+- La clave `angle_threshold_rad` de los configs.
+- Las claves `angle` y `angle_map_path` del dict que devuelve `run_pipeline`.
+- La línea `Angulo (rad)` de `_imprimir_resumen` y la constante
+  `THRESHOLD_SWEEP`, cuyos cinco valores están en radianes.
+
+Ninguna produce un resultado silenciosamente equivocado: son nombres y
+unidades, y la comparación que sí podía estar mal ya la hace `detects()`.
+Generalizarlas ahora es churn especulativo antes de saber qué necesita el
+segundo detector; se renombran cuando entre y se sepa contra qué.
