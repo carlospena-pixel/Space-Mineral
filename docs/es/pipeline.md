@@ -219,13 +219,26 @@ de `BAND_ORDER`) y el AOI.
 `meta` registra de dónde salió el cubo: producto, tile, fecha de sensado,
 baseline, offset, ventana del AOI, resolución nativa por banda, clases SCL
 descartadas y la composición SCL del AOI. **Es documentación, no
-configuración**: nada del pipeline lee de `meta` para decidir qué hacer
+configuración**: nada del pipeline toma de `meta` un parámetro que decida qué se
+calcula. Se lee en dos lugares, y ninguno lo contradice: `_cache_coincide`
+compara `meta["aoi_window"]` contra la ventana del config, donde lo único que
+`meta` puede hacer es **vetar** el caché —nunca aporta el AOI, que siempre viene
+del config—, y `_guardar_heatmap` lee `tile_id` y `sensing_date` para el título
+de la figura, que es un uso cosmético y no entra en ningún cálculo
 ([decisiones técnicas §1.1](decisiones_tecnicas.md#11-scene--srcmineralmapioraster_iopy)).
 
 `save_scene` / `load_scene` lo serializan a un único `.npz` —el cubo como
 `float32`, la `transform` como sus 6 coeficientes, el CRS como WKT y `meta`
 como JSON—. El JSON en vez de pickle es lo que permite cargar con
 `allow_pickle=False`: abrir una escena nunca puede ejecutar código.
+
+**El `.npz` no es reproducible byte a byte.** `meta` incluye `created_at`, así
+que dos reconstrucciones del mismo AOI dan archivos con hash distinto aunque el
+cubo sea idéntico. No afecta al criterio de reproducibilidad E1: el que tiene
+que salir idéntico es el `.tif`, y sale. Se anota para que nadie use el hash del
+`.npz` como identidad de contenido —es caché, no entregable, y no se versiona—.
+El `created_at` se conserva a propósito: la procedencia del cubo vale más que un
+hash que nadie compara.
 
 ### 7. Firma de referencia y comparación visual
 
@@ -323,7 +336,7 @@ del mapa. La función devuelve datos; imprimir es trabajo de la CLI.
 **El detector consume 9 bandas, no 12.** El `Scene` sigue naciendo con las 12 de
 `BAND_ORDER` y el pipeline lo subconjunta a `SAM_BANDS` **por índice**, con el
 mismo orden con que le pide la firma a `get_reference_spectrum`
-([decisiones técnicas §2](decisiones_tecnicas.md#sam_bands--9-bandas-declarado-y-todavía-no-consumido)).
+([decisiones técnicas §2](decisiones_tecnicas.md#sam_bands--9-bandas-consumidas-por-el-detector-desde-la-semana-3)).
 
 **Cero detecciones es un resultado, no un error.** El pipeline reporta cuántos
 píxeles quedaron bajo `angle_threshold_rad` junto a un barrido de umbrales
@@ -358,11 +371,15 @@ resultado vacío no se distingue de un error de cálculo.
    con la firma: usarlo como centinela convertiría los píxeles enmascarados en
    las detecciones más fuertes del mapa.
 4. **La figura son dos paneles.** El mapa dice *dónde*; el histograma dice *si
-   hay algo que mirar*: una distribución con cola hacia los ángulos bajos es
-   evidencia de que el detector separa algo, y una campana simétrica sin cola
-   es ruido con aspecto de resultado. El mapa solo no distingue esos dos casos.
-   La escala de color se recorta a los percentiles 2–98 y no al rango completo
-   `[0, π]` —los ángulos reales de esta escena ocupan de 0,07 a 0,70 rad—, los
+   hay algo que mirar*, y lo que hay que mirar en él es **si el extremo que
+   interesa está sobrepoblado respecto de una campana**, no hacia dónde cae la
+   cola larga. En este AOI la cola larga va hacia los ángulos **altos** —la
+   asimetría es +0,76—, y aun así el histograma sostiene la coherencia
+   espectral: 0,1 rad está a 5,2 desviaciones estándar bajo la media, donde una
+   gaussiana daría 0,43 píxeles en 4 millones, y hay 62. El mapa solo no
+   distingue un exceso así del ruido. La escala de color se recorta a los
+   percentiles 2–98 y no al rango completo `[0, π]` —los ángulos del AOI
+   completo ocupan de 0,07 a 0,70 rad—, los
    percentiles se calculan con `np.nanpercentile` (un solo `NaN` con
    `np.percentile` deja el panel plano sin lanzar nada) y los ejes van en
    coordenadas del CRS derivadas de `scene.transform`, no en índices de píxel.
@@ -379,6 +396,7 @@ Desde la raíz del repositorio, con el entorno del
 | `python scripts/visualizar_mascara.py` | Relee SCL sobre la ventana del `Scene` y la dibuja junto a `Scene.mask` | `outputs/figures/mascara_scl.png` |
 | `python scripts/plot_kaolinite_signature.py` | Firma de referencia de la caolinita, banda a banda | `outputs/figures/kaolinite_signature.png` |
 | `python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml` | Etapas 7, 8 y 10 de extremo a extremo: resuelve el `Scene`, corre el detector e imprime el resumen | `outputs/maps/kaolinite_sam_angle.tif` y `outputs/figures/kaolinite_sam_angle.png` |
+| `python scripts/verificar_cifras.py` | Recalcula desde el `.tif` las cifras que el README y la sección 7 publican, las compara contra lo que dicen esos archivos y sale con código 1 si alguna no calza | Nada: solo lee e imprime |
 
 `visualizar_rgb.py` y `visualizar_mascara.py` cargan `data/interim/scene.npz`
 y, si no existe, construyen el `Scene` desde `data/raw/`.

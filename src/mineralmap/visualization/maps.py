@@ -322,10 +322,17 @@ def plot_score_map(
     """Dibuja un mapa de puntaje junto al histograma de sus valores validos.
 
     Son dos paneles y no dos figuras porque son la misma pregunta mirada de dos
-    formas. El mapa dice *donde*; el histograma dice *si hay algo que mirar*:
-    una distribucion con cola hacia los angulos bajos es evidencia de que el
-    detector separa algo, y una campana simetrica sin cola es ruido con
-    aspecto de resultado. El mapa solo no distingue esos dos casos.
+    formas. El mapa dice *donde*; el histograma dice *si hay algo que mirar*.
+
+    Lo que hay que leer en el histograma es si el extremo que interesa esta
+    **sobrepoblado respecto de una campana**, no hacia donde cae la cola larga.
+    Son dos preguntas distintas y confundirlas lleva a describir al reves una
+    distribucion perfectamente informativa: un mapa de puntaje puede tener toda
+    su cola larga del lado que NO interesa y aun asi traer, en el extremo que
+    si interesa, un exceso de varios ordenes de magnitud sobre lo que daria el
+    ruido. Ese exceso es la evidencia; la forma de la cola opuesta no dice nada
+    sobre el. El mapa solo no distingue un exceso asi del azar, porque un
+    punado de pixeles dispersos no se ve en 4 millones.
 
     Parameters
     ----------

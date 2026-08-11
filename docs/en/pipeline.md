@@ -219,13 +219,26 @@ what chains stages 1 to 5.
 `meta` records where the cube came from: product, tile, sensing date, baseline,
 offset, AOI window, native resolution per band, discarded SCL classes and the
 AOI's SCL composition. **It is documentation, not configuration**: nothing in
-the pipeline reads `meta` to decide what to do
+the pipeline takes from `meta` a parameter that decides what gets computed. It
+is read in two places, and neither contradicts that: `_cache_coincide` compares
+`meta["aoi_window"]` against the config's window, where all `meta` can do is
+**veto** the cache — it never supplies the AOI, which always comes from the
+config — and `_guardar_heatmap` reads `tile_id` and `sensing_date` for the
+figure title, a cosmetic use that enters no computation
 ([technical decisions §1.1](technical_decisions.md#11-scene--srcmineralmapioraster_iopy)).
 
 `save_scene` / `load_scene` serialise it to a single `.npz` — the cube as
 `float32`, the `transform` as its 6 coefficients, the CRS as WKT and `meta` as
 JSON. JSON instead of pickle is what allows loading with `allow_pickle=False`:
 opening a scene can never execute code.
+
+**The `.npz` is not reproducible byte for byte.** `meta` includes `created_at`,
+so two rebuilds of the same AOI give files with different hashes even when the
+cube is identical. This does not affect the E1 reproducibility criterion: what
+has to come out identical is the `.tif`, and it does. It is noted so that nobody
+uses the `.npz` hash as a content identity — it is a cache, not a deliverable,
+and it is not versioned. `created_at` is kept deliberately: the cube's
+provenance is worth more than a hash nobody compares.
 
 ### 7. Reference signature and visual comparison
 
@@ -325,7 +338,7 @@ The function returns data; printing is the CLI's job.
 12 of `BAND_ORDER` and the pipeline subsets it to `SAM_BANDS` **by index**,
 with the same ordering it uses to request the signature from
 `get_reference_spectrum`
-([technical decisions §2](technical_decisions.md#sam_bands--9-bands-declared-and-not-yet-consumed)).
+([technical decisions §2](technical_decisions.md#sam_bands--9-bands-consumed-by-the-detector-since-week-3)).
 
 **Zero detections is a result, not an error.** The pipeline reports how many
 pixels fell below `angle_threshold_rad` alongside a threshold sweep (0.05 to
@@ -359,12 +372,15 @@ in `visualization/maps.py`.
    signature: using it as a sentinel would turn the masked pixels into the
    map's strongest detections.
 4. **The figure is two panels.** The map says *where*; the histogram says
-   *whether there is anything to look at*: a distribution with a tail towards
-   low angles is evidence that the detector separates something, and a
-   symmetric bell with no tail is noise shaped like a result. The map alone
-   cannot tell those two cases apart. The colour scale is clipped to the 2–98
-   percentiles rather than the full `[0, π]` range — this scene's real angles
-   span 0.07 to 0.70 rad — the percentiles are computed with `np.nanpercentile`
+   *whether there is anything to look at*, and what to read in it is **whether
+   the end you care about is overpopulated relative to a bell**, not which way
+   the long tail falls. Over this AOI the long tail runs towards **high**
+   angles — skewness is +0.76 — and the histogram still carries the spectral
+   coherence: 0.1 rad sits 5.2 standard deviations below the mean, where a
+   Gaussian would give 0.43 pixels in 4 million, and there are 62. The map
+   alone cannot tell such an excess from noise. The colour scale is clipped to
+   the 2–98 percentiles rather than the full `[0, π]` range — the full AOI's
+   angles span 0.07 to 0.70 rad — the percentiles are computed with `np.nanpercentile`
    (a single `NaN` under `np.percentile` flattens the panel without raising
    anything), and the axes are in CRS coordinates derived from
    `scene.transform`, not pixel indices.
@@ -381,6 +397,7 @@ From the repository root, with the environment from the
 | `python scripts/visualizar_mascara.py` | Re-reads SCL over the `Scene` window and draws it next to `Scene.mask` | `outputs/figures/mascara_scl.png` |
 | `python scripts/plot_kaolinite_signature.py` | Kaolinite reference signature, band by band | `outputs/figures/kaolinite_signature.png` |
 | `python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml` | Stages 7, 8 and 10 end to end: resolves the `Scene`, runs the detector and prints the summary | `outputs/maps/kaolinite_sam_angle.tif` and `outputs/figures/kaolinite_sam_angle.png` |
+| `python scripts/verificar_cifras.py` | Recomputes from the `.tif` the figures the README and section 7 publish, compares them against what those files say, and exits 1 if any disagrees | Nothing: it only reads and prints |
 
 `visualizar_rgb.py` and `visualizar_mascara.py` load `data/interim/scene.npz`
 and, if it is missing, build the `Scene` from `data/raw/`.
