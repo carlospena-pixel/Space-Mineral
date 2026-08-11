@@ -7,6 +7,7 @@ from __future__ import annotations
 import numpy as np
 
 from mineralmap.algorithms.base import Detector
+from mineralmap.config import SAM_BANDS
 
 
 class SAM(Detector):
@@ -18,9 +19,20 @@ class SAM(Detector):
     variaciones de iluminacion/albedo.
 
     El puntaje que devuelve es el angulo, o sea que **menor es mas parecido**.
-    Es la direccion contraria a la que declara el docstring de `Detector`; la
-    tension esta anotada ahi y en `docs/es/decisiones_tecnicas.md`.
+    Eso ya no es una tension con el contrato: `Detector` admite las dos
+    direcciones y cada detector declara la suya en `higher_is_better`, que es
+    lo que consulta `detects()` para binarizar (decisiones tecnicas seccion 8).
     """
+
+    # El puntaje es el angulo: menor es mas parecido.
+    higher_is_better = False
+
+    # Las 9 bandas de SAM_BANDS, no las 12 del Scene. Se declara aca --y no en
+    # el pipeline, que antes las importaba de config-- para que el flujo pueda
+    # preguntar en vez de asumir: un detector con otras necesidades espectrales
+    # recibia igual estas nueve. Tupla y no lista porque es atributo de clase:
+    # una lista mutable se comparte entre instancias.
+    bands = tuple(SAM_BANDS)
 
     def predict(self, cube: np.ndarray, reference: np.ndarray) -> np.ndarray:
         """Calcula el mapa de angulo espectral entre `cube` y `reference`.
