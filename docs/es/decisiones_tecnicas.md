@@ -701,3 +701,122 @@ Ninguna produce un resultado silenciosamente equivocado: son nombres y
 unidades, y la comparación que sí podía estar mal ya la hace `detects()`.
 Generalizarlas ahora es churn especulativo antes de saber qué necesita el
 segundo detector; se renombran cuando entre y se sepa contra qué.
+
+
+## 9. La capa de verdad de terreno
+
+Tres decisiones de la Semana 4 que hay que poder defender en voz alta.
+
+### 9.1 La Carta Calama no aplica; la reemplazan Pozo Almonte y Mamiña
+
+El plan original nombraba la «Carta Calama» como fuente de la verdad de
+terreno. **No sirve**: Calama está en la Región de Antofagasta, en torno a
+22,45° S / 68,93° W, unos 250 km al sur del AOI. Es un residuo de cuando la
+zona de estudio era Chuquicamata (ver sección 3): la zona se movió a Pampa del
+Tamarugal en la Semana 2 y el plan escrito nunca se actualizó.
+
+Las cartas 1:100.000 de SERNAGEOMIN que sí cubren el AOI son **dos**:
+
+| Carta | Código | Serie Geología Básica | Año | Cobertura |
+|---|---|---|---|---|
+| Pozo Almonte | M204 | 162–163 (junto con Iquique) | 2013 | 70,00°–69,50° W · 20,50°–20,00° S |
+| Mamiña | M303 | 174 | 2015 | 69,50°–69,00° W · 20,50°–20,00° S |
+
+El AOI va de −69,7673° a −69,383° de longitud y **cruza el límite entre
+ambas**: la mitad oeste cae en Pozo Almonte y la este en Mamiña. Hay que cargar
+las dos y unirlas. Medido sobre los datos descargados, la unión cubre el AOI al
+100 % (1600,0 de 1600 km²) y las hojas se solapan en una franja estrecha
+(E 447.510–447.677), así que no queda hueco en la costura. `tests/test_geology.py`
+comprueba ambas cosas cuando los GeoJSON están en disco.
+
+Los vectores salen del FeatureServer `Chile_Geology`, una **digitalización de
+terceros sin licencia declarada**. Se usa como insumo técnico; la cita que
+corresponde es siempre la carta original. Ver
+`data/external/geologia/README.md`.
+
+### 9.2 No existe capa de alteración: el positivo lo elegimos nosotros
+
+SERNAGEOMIN publica un único tema cartográfico («Geología Básica»), no publica
+WFS y no tiene ningún servicio de alteración en su organización ArcGIS. **No
+hay ninguna capa abierta de polígonos de alteración hidrotermal para el norte
+de Chile.** El riesgo R5 del documento 08 lo anticipó; esto lo confirma.
+
+La consecuencia es la decisión central de la semana: la verdad de terreno **no
+se obtiene filtrando una columna**. Las cartas traen litología. El positivo es
+una **selección de unidades litológicas** que el equipo declara aceptables como
+compatibles con alteración argílica, y eso es un juicio geológico, no un dato
+del mapa.
+
+Por eso la selección no está en el código: vive en
+`configs/verdad_terreno_tamarugal.yaml`, versionada, con una línea de
+justificación por unidad y con la lista completa de las 38 unidades presentes
+en el AOI y su superficie. Es lo primero que alguien va a cuestionar en una
+defensa, y tiene que poder cuestionarlo leyendo un YAML, no leyendo Python.
+
+**Hallazgo que hay que decir en la defensa antes de que lo pregunten:** dentro
+de este AOI no hay ninguna unidad candidata a alteración. Las tres que se
+esperaban existen en la hoja Mamiña y caen todas fuera:
+
+| Unidad | Distancia al borde E del AOI |
+|---|---|
+| Brechas hidrotermales de turmalina (Cpx. Yabricoya) | 29,5 km |
+| Complejo intrusivo Cerro Colorado | 10,3 km |
+| Complejo Yabricoya (todas sus facies) | 19,1 km |
+
+El AOI cae íntegramente sobre el relleno sedimentario de la Pampa del
+Tamarugal: 96 % depósitos aluviales, salinos, eólicos y de piedemonte. Es una
+cuenca de relleno, no el distrito de pórfido. La capa sigue sirviendo para
+medir **falsos positivos** sobre un negativo bien fundado, que es la pregunta
+que el mapa de ángulos no puede responder solo; lo que no permite estimar es el
+recall. Medir detección positiva exige mover o ampliar el AOI unos 10–30 km al
+este, y eso es una decisión de alcance del proyecto.
+
+### 9.3 La clase `ambiguo` existe y no se colapsa a 0
+
+La capa tiene tres valores, no dos:
+
+| Valor | Significado |
+|---|---|
+| `1` | Positivo: unidad aceptada como compatible con alteración argílica |
+| `0` | Negativo: unidad claramente no candidata (salares, eólicos, aluviales recientes, gravas) |
+| `255` | Ambiguo: unidad no clasificada, o píxel fuera de todo polígono |
+
+Los `255` **se excluyen** del cálculo de métricas. Forzar un binario 0/1
+convertiría «no lo sé» en «no hay», que sobre una clase tan desbalanceada como
+ésta es exactamente la sustitución que infla la precisión sin que nada falle:
+cada píxel dudoso pasaría a contar como verdadero negativo y engordaría el
+denominador de la especificidad con casos que nadie verificó.
+
+El `255` es además el **default** de todo lo que el YAML no nombra, y el fill de
+todo lo que ningún polígono cubre. El silencio significa «no lo sé», nunca «no
+hay». `clasificar_unidades` avisa por `warnings.warn` cuántas unidades quedaron
+sin clasificar y qué fracción de la superficie representan, para que un YAML mal
+llenado no produzca en silencio una capa 100 % ambigua que se ve igual que una
+capa correcta.
+
+### 9.4 `all_touched=False` al rasterizar
+
+Un píxel pertenece al polígono que **cubre su centro**. Con `all_touched=True`
+se marcaría todo píxel que el polígono roce, lo que engorda cada área positiva
+en un anillo de un píxel completo justo en los bordes —que es donde una carta
+1:100.000 es menos confiable frente a píxeles de 20 m—. La precisión del
+contacto entre unidades en esa carta es de varios píxeles; ensancharlo a
+propósito solo agrega área positiva que no se puede defender.
+
+Dos detalles relacionados, ambos testeados:
+
+- **Se reproyecta siempre** con `.to_crs(scene.crs)` antes de rasterizar,
+  aunque los polígonos ya vengan en 32719. Es idempotente en ese caso y es la
+  red de seguridad contra el único modo de fallo que no se nota: unas
+  coordenadas en grados contra una `transform` en metros no lanzan nada,
+  simplemente no marcan nada, y la capa sale entera en `ambiguo` —que es justo
+  el aspecto que tiene una capa correcta con el YAML sin llenar—.
+- **No se aplica `scene.mask`.** Que un píxel sea válido (nubes, sombra, agua)
+  y que esté cubierto por la cartografía son dos cosas distintas, y quien las
+  combina es el consumidor. Es el mismo criterio con que `scene_builder`
+  entrega la máscara SCL aparte en vez de aplicarla al cubo.
+- Donde dos polígonos se pisan **gana el valor de clase más alto**, o sea el
+  positivo sobre el negativo. Las dos hojas se solapan de verdad, así que el
+  caso ocurre. Se elige el positivo porque es la clase rara: borrarla con un
+  negativo la haría desaparecer sin dejar rastro, mientras que lo contrario solo
+  agrega un área positiva que se ve en la figura.

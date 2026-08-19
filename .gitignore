@@ -6,6 +6,16 @@ data/*
 data/external/*
 !data/external/*.txt
 
+# data/external/geologia/ son los poligonos de la cartografia SERNAGEOMIN que
+# construyen la verdad de terreno. Van al repo por el mismo motivo que las
+# firmas .txt: son livianos (GeoJSON de unos pocos MB), no se regeneran desde
+# ningun dato local --- se bajan de un servicio de terceros que puede cambiar o
+# desaparecer--- y son la evidencia reproducible de contra que se valido.
+!data/external/geologia/
+data/external/geologia/*
+!data/external/geologia/*.geojson
+!data/external/geologia/*.md
+
 # Python
 __pycache__/
 *.py[cod]
@@ -68,3 +78,14 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/
+
+# docs/recorrido/ es el recorrido explicativo del proyecto: capitulos en
+# markdown, sus imagenes y el HTML compilado. NO se versiona por decision
+# explicita (2026-08-18): es material de estudio propio, no parte del
+# entregable, y el HTML compilado pesa 2,1 MB que no aportan a un clon.
+# Se ignora la carpeta completa. Ojo: una vez excluido el directorio, git ni
+# siquiera desciende a el, asi que cualquier negacion interna (por ejemplo
+# `!docs/recorrido/imagenes/*.png`, que estaba aca para salvar las figuras de
+# la regla `*.png`) queda muerta. Por eso se elimino en vez de dejarla.
+# Si algun dia el recorrido se publica, hay que quitar esta regla entera.
+docs/recorrido/

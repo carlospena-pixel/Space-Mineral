@@ -18,14 +18,15 @@ repeated.
 | 6 | Hand back and serialise the `Scene` | `preprocessing/scene_builder.py`, `io/raster_io.py` | Implemented |
 | 7 | Reference signature and visual comparison | `spectral/endmembers.py`, `visualization/spectra.py` | Implemented |
 | 8 | Detection algorithm | `algorithms/sam.py`, `pipeline.py` | Implemented |
-| 9 | Validation against geological mapping | `validation/` | **Pending, Tier 1** |
+| 9 | Validation against geological mapping | `validation/` | **Partial**: the ground-truth layer exists; metrics do not |
 | 10 | Result visualisation and export | `visualization/maps.py`, `io/raster_io.py` | Implemented |
 
 Stages 1 to 6 are the preprocessing that Week 2 closed, and a single function
 chains them: `build_scene_from_safe()`. Stages 7, 8 and 10 are chained by
 `run_pipeline(config)`, which Week 3 closed: from the experiment's YAML to the
 GeoTIFF and the heatmap, with no manual steps. The only unimplemented stage is
-9.
+9, and since Week 4 it is half done: the ground-truth layer exists and is
+aligned with the scene, but the metrics computed on it do not.
 
 ## The implemented flow: from `.SAFE` to `Scene`
 
@@ -409,21 +410,62 @@ index axis instead of using `plot_spectra`, which is what notebook 01 and the
 `notebooks/01_explore_sentinel2_scene.ipynb` walks the same flow interactively
 and closes with the alignment check between cube and reference signature.
 
-## What is missing: stage 9, pending Tier 1
+## Stage 9: half done
 
-**9. Validation against geological mapping.** `validation/geology.py` (loading
-SERNAGEOMIN polygons and rasterising ground truth) and `validation/metrics.py`
-(confusion matrix, F1, IoU, ROC/AUC, kappa) are complete stubs: every function
-raises `NotImplementedError`. No ground truth has been downloaded into
-`data/external/`.
+### What was completed (Week 4, Track A): the ground-truth layer
+
+`validation/geology.py` is implemented. The full path is:
+
+```
+scripts/descargar_geologia.py
+   |
+   |-- Chile_Geology FeatureServer, layers 439 and 437, paged via resultOffset
+   v
+data/external/geologia/{pozo_almonte,mamina}.geojson   (EPSG:32719, versioned)
+   |
+   |-- load_geology_polygons(path) ......... GeoDataFrame; demands CRS, polygons
+   |-- clasificar_unidades(gdf, config) .... `clase` column, per the YAML
+   |-- rasterize_ground_truth(gdf, scene) .. reprojects and burns to the grid
+   v
+outputs/maps/ground_truth.tif   (2000x2000, same crs and transform as the angle
+                                 map; `write_geotiff` checks it)
+```
+
+`build_ground_truth(config_path, scene)` chains it and also returns a
+traceability dict (files used, polygons and pixels per class, AOI fraction,
+unclassified units). `scripts/construir_verdad_terreno.py` is the CLI that runs
+and prints it.
+
+The layer carries **three** values: `1` positive, `0` negative and `255`
+ambiguous (unclassified unit, or pixel outside every polygon). Why the third
+class exists is in [technical_decisions.md](technical_decisions.md), section 9.
+
+Which unit counts as positive is **not in the code**: it is declared in
+`configs/verdad_terreno_tamarugal.yaml`, because it is a geological judgement
+and not a fact from the map. With that YAML left empty the pipeline still runs
+and produces a 100 % ambiguous layer, which is where it stands today.
+
+Figure F5, `outputs/figures/overlay_deteccion_geologia.png`, overlays the angle
+map and the polygons; `visualization/maps.py::plot_overlay_geologia` draws it.
+
+**One thing to know when consuming the .tif**: `write_geotiff` always writes
+float32 with `nodata=NaN`, so `ground_truth.tif` carries `1.0`, `0.0` and
+`255.0` as float32, not uint8. All three are exact in float32, but a reader has
+to cast before comparing for equality.
+
+### What is missing: the metrics (Track B)
+
+`validation/metrics.py` (confusion matrix, F1, IoU, ROC/AUC, kappa) and
+`scripts/evaluate.py` are still complete stubs: every function raises
+`NotImplementedError`.
 
 **This is what stops the stage 8 map from being called a "kaolinite
 detection".** What exists is a spectral similarity map: it states how far, in
 angle, each pixel sits from the laboratory signature, not which mineral is on
-the ground. Without ground truth there is no way to estimate how many of those
-pixels are kaolinite and how many are any other surface that resembles it
-across 9 bands. The measured figures are in the "Results" section of the
-[README](../../README.md#results).
+the ground. The ground-truth layer is the reference to measure it against, but
+measuring is what has not been done yet. Whoever does it must exclude the `255`
+pixels from the computation. The measured figures are in the "Results" section
+of the [README](../../README.md#results).
 
 `io/raster_io.py::read_scene()` also remains unimplemented. It is the
 counterpart of reading a multi-band `Scene` back from GeoTIFF and it blocks

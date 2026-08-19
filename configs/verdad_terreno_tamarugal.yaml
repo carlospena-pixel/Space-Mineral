@@ -1,0 +1,211 @@
+# Verdad de terreno para el AOI de Tamarugal (T19KDT).
+#
+# Fuente: cartas SERNAGEOMIN Pozo Almonte (M204) y Mamina (M303), digitalizadas
+# en el FeatureServer Chile_Geology. Se descargan con
+# `python scripts/descargar_geologia.py`. Ver data/external/geologia/README.md.
+#
+# ADVERTENCIA: esta asignacion es un juicio geologico explicito, no un dato del
+# mapa original. Las cartas no cartografian "alteracion" como atributo:
+# SERNAGEOMIN publica un unico tema ("Geologia Basica") y no publica poligonos
+# de alteracion hidrotermal para el norte de Chile. El positivo de esta capa es
+# una seleccion de unidades litologicas hecha por el equipo, y este archivo es
+# donde hay que discutirla.
+#
+# ---------------------------------------------------------------------------
+# LEER ANTES DE LLENAR `unidades.positivo`
+# ---------------------------------------------------------------------------
+# La union de ambas hojas cubre el AOI al 100 % (1600,0 de 1600 km2), pero
+# dentro del AOI NO hay ninguna unidad candidata a alteracion argilica. Las
+# tres que se esperaban existen en la hoja Mamina y caen todas FUERA:
+#
+#   Brechas hidrotermales de turmalina (Cpx. Yabricoya)  29,5 km al E del borde
+#   Complejo intrusivo Cerro Colorado                    10,3 km al E del borde
+#   Complejo Yabricoya (todas sus facies)                19,1 km al E del borde
+#
+# El AOI cae integramente sobre el relleno sedimentario de la Pampa del
+# Tamarugal: un 96 % es deposito aluvial, salino, eolico o de piedemonte. Es
+# una cuenca de relleno, no el distrito de porfido. Por eso `positivo` queda
+# VACIO: no hay ninguna unidad de esta cartografia, dentro de este AOI, que se
+# pueda declarar positivo sin inventarlo.
+#
+# Con `positivo` vacio la capa es utilizable igual, y no es un consuelo: un
+# negativo bien fundado sobre el 96 % del AOI mide la tasa de falsos positivos
+# del detector, que es la pregunta que el mapa de angulos no puede responder
+# solo. Lo que no se puede estimar con esta capa es el recall.
+#
+# Si se necesita medir deteccion positiva, hay que mover o ampliar el AOI hacia
+# el este --- unos 10-30 km --- para que entren Cerro Colorado y Yabricoya. Esa
+# es una decision de alcance del proyecto, no de este archivo.
+# ---------------------------------------------------------------------------
+
+fuente:
+  pozo_almonte: data/external/geologia/pozo_almonte.geojson
+  mamina: data/external/geologia/mamina.geojson
+  campo_unidad: Unidad_geologica
+
+clases:
+  positivo: 1
+  negativo: 0
+  ambiguo: 255
+
+unidades:
+  # Vacias a proposito: las llena una persona, no el codigo. Todo lo que no
+  # aparezca en ninguna de las dos listas cae en `ambiguo` (255) y se excluye
+  # del calculo de metricas. El pipeline corre con ambas vacias --- el
+  # resultado es 100 % ambiguo --- y esa corrida sirve para verificar que la
+  # rasterizacion y el alineamiento estan bien antes de discutir geologia.
+  positivo: []
+  negativo: []
+
+# ===========================================================================
+# UNIDADES PRESENTES EN EL AOI, por superficie descendente
+# ===========================================================================
+# 38 unidades, generadas recortando la union de ambas hojas al bbox del AOI
+# (E 419.960-459.960 / N 7.740.040-7.780.040, EPSG:32719).
+#
+# Columnas: km2 dentro del AOI | % del AOI | hoja(s) | unidad
+#
+# La marca [P] es una PROPUESTA MIA de clasificacion, no una decision tomada.
+#   [P-neg] propongo negativo    [P-amb] propongo dejar ambiguo
+# No hay ningun [P-pos]: ver la advertencia de arriba.
+#
+# Para usar una unidad hay que copiar su nombre EXACTO a la lista de arriba,
+# con acentos. La comparacion recorta espacios de los extremos (`.strip()`)
+# porque la fuente trae "Granitos, monzonitas cuarcíferas y sienogranitos del
+# Cretácico Superior" con y sin espacio final, como dos etiquetas distintas.
+#
+#   818.22  51.14%  ambas  Depositos aluviales antiguos del Pleistoceno-Holoceno
+#     [P-amb] Es la mitad del AOI. Relleno aluvial antiguo: puede acarrear
+#     material retrabajado desde fuentes alteradas de la cordillera, asi que
+#     declararlo negativo en bloque asumiria algo que la carta no dice.
+#     Dejarlo ambiguo cuesta la mitad del AOI en las metricas; es el costo de
+#     no afirmar de mas. Es la decision mas discutible de esta lista.
+#
+#   359.04  22.44%  ambas  Depositos aluviales activos
+#     [P-neg] Sedimento en transporte actual, sin desarrollo de perfil de
+#     meteorizacion. No es candidato a alteracion argilica in situ.
+#
+#   108.26   6.77%  mamina  Depositos de piedemonte, gravas superiores
+#     [P-neg] Gravas de piedemonte; el prompt las nombra explicitamente como
+#     no candidatas.
+#
+#    70.02   4.38%  pozo_almonte  Depositos salinos, facies lisa ondulada delegada
+#     [P-neg] Costra salina. Espectralmente brillante y puede confundir al SAM,
+#     que es justo el motivo para tenerla marcada como negativo.
+#
+#    53.63   3.35%  pozo_almonte  Depositos salinos, indiferenciados
+#     [P-neg] Idem anterior.
+#
+#    45.96   2.87%  mamina  Formacion El Diablo, Miembro superior
+#     [P-amb] Secuencia clastica continental miocena. No es un objetivo de
+#     alteracion, pero tampoco es un deposito reciente inequivoco.
+#
+#    24.62   1.54%  ambas  Depositos salinos, facies gruesa rugosa
+#     [P-neg] Costra salina.
+#
+#    23.20   1.45%  pozo_almonte  Depositos salinos, facies transicional
+#     [P-neg] Costra salina.
+#
+#    20.05   1.25%  pozo_almonte  Depositos salinos, facies lisa
+#     [P-neg] Costra salina.
+#
+#    13.36   0.83%  mamina  Formacion Cerro Empexa, facies de andesitas
+#     [P-amb] Volcanitas cretacicas. Litologia hospedante plausible de
+#     alteracion en la region, pero la carta no declara que aca lo este.
+#
+#    11.76   0.73%  mamina  Formacion El Diablo, Miembro inferior
+#     [P-amb] Idem Miembro superior.
+#
+#    11.42   0.71%  pozo_almonte  Gravas de Alto Hospicio
+#     [P-neg] Gravas; el prompt las nombra como no candidatas.
+#
+#     7.68   0.48%  mamina  Monzodioritas cuarciferas claras del Cretacico Superior
+#     [P-amb] Intrusivo. Es el tipo de roca que hospeda alteracion en el
+#     distrito, pero estos cuerpos estan lejos de Cerro Colorado y la carta no
+#     los declara alterados.
+#
+#     5.00   0.31%  pozo_almonte  Depositos de playa aluvial activos
+#     [P-neg] Deposito reciente.
+#
+#     4.89   0.31%  mamina  Depositos eolicos activos en dunas transversales
+#     [P-neg] Deposito eolico reciente.
+#
+#     4.42   0.28%  pozo_almonte  Complejo intrusivo Montevideo, monzonita
+#     [P-amb] Intrusivo, mismo argumento que las monzodioritas.
+#
+#     3.51   0.22%  pozo_almonte  Complejo intrusivo Montevideo, diorita
+#     [P-amb] Idem.
+#
+#     2.50   0.16%  mamina  Formacion Altos de Pica, Miembro Imagua, facies conglomeradicas
+#     [P-amb] Secuencia clastica oligo-miocena.
+#
+#     2.28   0.14%  mamina  Monzodioritas y monzodioritas cuarciferas grises del Cretacico Superior
+#     [P-amb] Intrusivo.
+#
+#     2.13   0.13%  mamina  Depositos eolicos activos en mantos
+#     [P-neg] Deposito eolico reciente.
+#
+#     1.83   0.11%  mamina  Ignimbrita Tambillo
+#     [P-amb] Ignimbrita; puede tener alteracion vapor-phase, no cartografiada.
+#
+#     1.57   0.10%  mamina  Depositos coluviales del Pleistoceno-Holoceno
+#     [P-neg] Deposito de ladera reciente.
+#
+#     1.34   0.08%  pozo_almonte  Depositos antropicos
+#     [P-neg] Intervencion humana; no es superficie natural.
+#
+#     0.92   0.06%  mamina  Granitos, monzonitas cuarcíferas y sienogranitos del Cretácico Superior
+#     [P-amb] Intrusivo. OJO: esta etiqueta viene duplicada en la fuente, con y
+#     sin espacio final. La comparacion las une con `.strip()`.
+#
+#     0.57   0.04%  mamina  Formacion Duplijsa
+#     [P-amb] Unidad menor.
+#
+#     0.44   0.03%  mamina  Depositos eolicos activos en dunas crecientes
+#     [P-neg] Deposito eolico reciente.
+#
+#     0.24   0.02%  pozo_almonte  Depositos eolicos en dunas crecientes
+#     [P-neg] Deposito eolico reciente. Etiqueta distinta a la de Mamina para
+#     lo que es la misma cosa: son dos cartas y dos leyendas.
+#
+#     0.24   0.02%  mamina  Formacion Cerro Empexa, facies conglomeradicas
+#     [P-amb] Facies clastica de la misma formacion.
+#
+#     0.22   0.01%  mamina  Depositos eolicos activos, indiferenciados
+#     [P-neg] Deposito eolico reciente.
+#
+#     0.13   0.01%  mamina  Depositos eolicos activos en dunas longitudinales
+#     [P-neg] Deposito eolico reciente.
+#
+#     0.13   0.01%  mamina  Formacion Altos de Pica, Miembro Sagasca, facies conglomeradicas
+#     [P-amb] Secuencia clastica.
+#
+#     0.10   0.01%  pozo_almonte  Formacion Punta Barranco, Miembro superior volcanico
+#     [P-amb] Volcanitas, area despreciable.
+#
+#     0.09   0.01%  pozo_almonte  Pórfidos del Cretacico Inferior (andesitas)
+#     [P-amb] Porfido andesitico. Nombre sugerente, area despreciable (9 ha) y
+#     sin declaracion de alteracion en la carta.
+#
+#     0.08   0.01%  mamina  Estratos de Guataguata
+#     [P-amb] Unidad menor.
+#
+#     0.07   0.00%  mamina  Depositos aluviales antiguos, facies de humedales
+#     [P-neg] Facies de humedal dentro del aluvial antiguo.
+#
+#     0.05   0.00%  mamina  Porfido daciticos y riodaciticos del Cretacico Superior alto-Paleoceno Inferior
+#     [P-amb] Porfido dacitico, area despreciable (5 ha).
+#
+#     0.04   0.00%  mamina  Formacion Altos de Pica, Miembro Sagasca, tobas
+#     [P-amb] Tobas, area despreciable.
+#
+#     0.02   0.00%  mamina  Depositos antropicos, suelos de uso agrícola
+#     [P-neg] Suelo agricola; no es superficie natural.
+#
+# ---------------------------------------------------------------------------
+# Si se adoptan todos los [P-neg]: negativo = 686,3 km2 = 42,9 % del AOI,
+# ambiguo = 57,1 %, positivo = 0 %.
+# Si ademas se declararan negativos los aluviales antiguos --- la unidad
+# discutible de la lista, 818,2 km2 --- el negativo subiria a 1504,5 km2 =
+# 94,0 % del AOI y el ambiguo bajaria a 6,0 %.
+# ===========================================================================
