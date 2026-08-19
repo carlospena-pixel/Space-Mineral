@@ -693,3 +693,122 @@ comparison that really could have been wrong is now made by `detects()`.
 Generalising them now is speculative churn before knowing what the second
 detector needs; they get renamed when it lands and there is something to rename
 them against.
+
+
+## 9. The ground-truth layer
+
+Three Week 4 decisions that have to survive being said out loud.
+
+### 9.1 The Calama sheet does not apply; Pozo Almonte and Mamina replace it
+
+The original plan named the "Calama sheet" as the ground-truth source. **It is
+useless here**: Calama is in the Antofagasta Region, around 22.45° S / 68.93° W,
+some 250 km south of the AOI. It is a leftover from when the study area was
+Chuquicamata (see section 3): the area moved to Pampa del Tamarugal in Week 2
+and the written plan was never updated.
+
+The SERNAGEOMIN 1:100,000 sheets that do cover the AOI are **two**:
+
+| Sheet | Code | Geologia Basica series | Year | Coverage |
+|---|---|---|---|---|
+| Pozo Almonte | M204 | 162–163 (with Iquique) | 2013 | 70.00°–69.50° W · 20.50°–20.00° S |
+| Mamina | M303 | 174 | 2015 | 69.50°–69.00° W · 20.50°–20.00° S |
+
+The AOI spans −69.7673° to −69.383° of longitude and **straddles the boundary**
+between them: the western half falls in Pozo Almonte, the eastern half in
+Mamina. Both must be loaded and merged. Measured on the downloaded data, their
+union covers the AOI fully (1600.0 of 1600 km²) and the sheets overlap in a
+narrow strip (E 447,510–447,677), so the seam leaves no gap.
+`tests/test_geology.py` checks both, when the GeoJSON files are on disk.
+
+The vectors come from the `Chile_Geology` FeatureServer, a **third-party
+digitisation with no declared licence**. It is used as a technical input; the
+citation that counts is always the original sheet. See
+`data/external/geologia/README.md`.
+
+### 9.2 There is no alteration layer: we pick the positive ourselves
+
+SERNAGEOMIN publishes a single cartographic theme ("Geologia Basica"), publishes
+no WFS, and has no alteration service in its ArcGIS organisation. **There is no
+open layer of hydrothermal alteration polygons for northern Chile.** Risk R5 in
+document 08 anticipated this; this confirms it.
+
+The consequence is the central decision of the week: ground truth is **not
+obtained by filtering a column**. The sheets carry lithology. The positive class
+is a **selection of lithological units** that the team declares acceptable as
+compatible with argillic alteration, and that is a geological judgement, not a
+fact from the map.
+
+That is why the selection is not in the code: it lives in
+`configs/verdad_terreno_tamarugal.yaml`, versioned, with one line of
+justification per unit and the full list of the 38 units present in the AOI with
+their areas. It is the first thing anyone will challenge in a defence, and they
+have to be able to challenge it by reading a YAML, not by reading Python.
+
+**A finding to state in the defence before anyone asks:** there is no candidate
+alteration unit inside this AOI. The three that were expected exist in the
+Mamina sheet and all fall outside it:
+
+| Unit | Distance from the AOI's eastern edge |
+|---|---|
+| Tourmaline hydrothermal breccias (Yabricoya Complex) | 29.5 km |
+| Cerro Colorado intrusive complex | 10.3 km |
+| Yabricoya Complex (all facies) | 19.1 km |
+
+The AOI sits entirely on the sedimentary fill of the Pampa del Tamarugal: 96 %
+alluvial, saline, aeolian and piedmont deposits. It is a basin fill, not the
+porphyry district. The layer still serves to measure **false positives** against
+a well-founded negative, which is the question the angle map cannot answer on
+its own; what it cannot support is a recall estimate. Measuring positive
+detection requires moving or widening the AOI some 10–30 km east, and that is a
+project-scope decision.
+
+### 9.3 The `ambiguous` class exists and is not collapsed to 0
+
+The layer carries three values, not two:
+
+| Value | Meaning |
+|---|---|
+| `1` | Positive: unit accepted as compatible with argillic alteration |
+| `0` | Negative: clearly non-candidate unit (salars, aeolian, recent alluvial, gravels) |
+| `255` | Ambiguous: unclassified unit, or pixel outside every polygon |
+
+The `255` pixels are **excluded** from the metric computation. Forcing a 0/1
+binary would turn "I don't know" into "there is none", which on a class this
+imbalanced is exactly the substitution that inflates precision without anything
+failing: every doubtful pixel would start counting as a true negative and would
+pad the specificity denominator with cases nobody verified.
+
+`255` is also the **default** for anything the YAML does not name, and the fill
+for anything no polygon covers. Silence means "I don't know", never "there is
+none". `clasificar_unidades` warns via `warnings.warn` how many units were left
+unclassified and what fraction of the area they cover, so that a badly filled
+YAML cannot silently produce a 100 % ambiguous layer that looks exactly like a
+correct one.
+
+### 9.4 `all_touched=False` when rasterising
+
+A pixel belongs to the polygon that **covers its centre**. With
+`all_touched=True` every pixel the polygon merely grazes would be marked, which
+fattens each positive area by a full one-pixel ring precisely at the edges —
+where a 1:100,000 sheet is least reliable against 20 m pixels. Contact precision
+between units on that sheet is several pixels wide; widening it on purpose only
+adds positive area that cannot be defended.
+
+Two related details, both tested:
+
+- **Reprojection always happens** via `.to_crs(scene.crs)` before rasterising,
+  even when the polygons already arrive in 32719. It is idempotent in that case
+  and it is the safety net against the one failure mode that goes unnoticed:
+  coordinates in degrees against a `transform` in metres raise nothing, they
+  simply mark nothing, and the layer comes out entirely `ambiguous` — which is
+  exactly what a correct layer looks like with the YAML left empty.
+- **`scene.mask` is not applied.** Whether a pixel is valid (cloud, shadow,
+  water) and whether it is covered by the mapping are two different things, and
+  the consumer is who combines them. Same criterion by which `scene_builder`
+  hands back the SCL mask separately instead of applying it to the cube.
+- Where two polygons overlap, **the higher class value wins**, i.e. positive
+  over negative. The two sheets genuinely overlap, so the case occurs. Positive
+  is chosen because it is the rare class: erasing it with a negative would make
+  it vanish without a trace, whereas the reverse only adds positive area that is
+  visible in the figure.

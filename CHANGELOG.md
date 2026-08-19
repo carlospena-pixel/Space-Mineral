@@ -212,6 +212,53 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   cuente solo los píxeles válidos y que un mapa de forma distinta a la del
   `Scene` sea un error.
 
+#### Semana 4, Track A: la capa de verdad de terreno
+
+- `validation/geology.py` implementado. `load_geology_polygons()` (lee el
+  vectorial y exige CRS y geometrías de polígono), `clasificar_unidades()`
+  (asigna la clase según el YAML y avisa por `warnings.warn` cuántas unidades
+  quedaron sin clasificar y qué superficie representan),
+  `rasterize_ground_truth()` (reproyecta a `scene.crs` y quema los polígonos a
+  la grilla exacta del `Scene`, con `all_touched=False`) y `build_ground_truth()`
+  (orquesta el camino completo y devuelve el raster más un dict de
+  trazabilidad). También `cargar_config_verdad()`, que valida el YAML y rechaza
+  una unidad declarada como positivo y negativo a la vez.
+- `scripts/descargar_geologia.py`: descarga las dos hojas 1:100.000 de
+  SERNAGEOMIN que cubren el AOI —Pozo Almonte (M204) y Mamiña (M303)— desde el
+  FeatureServer `Chile_Geology`, paginando con `resultOffset`, y las deja en
+  EPSG:32719 bajo `data/external/geologia/`. Imprime por capa el n° de features,
+  el CRS, el bbox y la tabla de unidades con conteo y área, que es el insumo con
+  que se llena el YAML. Solo `urllib` de la stdlib: no se agregó `requests`.
+- `data/external/geologia/`: los dos GeoJSON (1.449 y 1.309 polígonos) y su
+  README con la fuente, la fecha, la advertencia de que es una digitalización de
+  terceros sin licencia declarada y la cita de las cartas originales. Se
+  versionan mediante una excepción explícita en `.gitignore`, con el mismo
+  criterio que las firmas `.txt`: son livianos, no se regeneran desde ningún dato
+  local y son la evidencia reproducible de contra qué se validó.
+- `configs/verdad_terreno_tamarugal.yaml`: el mapeo unidad → clase, revisable
+  sin leer código. Llega con las listas **vacías** a propósito —la selección es
+  un juicio geológico y la hace una persona— y con la lista completa de las 38
+  unidades presentes en el AOI, su superficie y una propuesta comentada por
+  unidad.
+- `scripts/construir_verdad_terreno.py`: CLI que carga el `Scene`, construye la
+  capa, la escribe en `outputs/maps/ground_truth.tif` con `write_geotiff` e
+  imprime la trazabilidad completa.
+- `visualization/maps.py::plot_overlay_geologia()`: la figura F5, el mapa de
+  ángulos con los polígonos geológicos encima, ejes en UTM, barra de escala y
+  leyenda que nombra las tres clases incluso cuando alguna no está presente.
+  La produce `scripts/figura_overlay_geologia.py` en
+  `outputs/figures/overlay_deteccion_geologia.png`, leyendo el `.tif` ya escrito
+  en vez de recalcular el SAM.
+- `tests/test_geology.py`: 22 tests sin red y sin la escena de 196 MB, sobre un
+  `Scene` sintético de 10×10 px y polígonos de coordenadas conocidas. Cubren la
+  alineación con el `Scene`, la corrección geométrica contada a mano, la
+  reproyección desde 4326 —el fallo que no se nota—, el `fill` a 255, el
+  comportamiento de `all_touched` en un píxel rozado, las unidades sin clasificar
+  con su warning, la normalización de espacios en las etiquetas y los errores con
+  mensaje útil. Dos tests con `skipif` verifican, cuando los GeoJSON reales están
+  en disco, que la unión de ambas hojas contenga el bbox del AOI y que no haya
+  hueco en la costura.
+
 ### Changed
 
 #### Cierre de la Semana 3: seis defectos de documentación y arquitectura

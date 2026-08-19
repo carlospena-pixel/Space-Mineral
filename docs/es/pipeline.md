@@ -18,7 +18,7 @@ repetirlo.
 | 6 | Entregar y serializar el `Scene` | `preprocessing/scene_builder.py`, `io/raster_io.py` | Implementada |
 | 7 | Firma de referencia y comparación visual | `spectral/endmembers.py`, `visualization/spectra.py` | Implementada |
 | 8 | Algoritmo de detección | `algorithms/sam.py`, `pipeline.py` | Implementada |
-| 9 | Validación contra cartografía | `validation/` | **Pendiente de Nivel 1** |
+| 9 | Validación contra cartografía | `validation/` | **Parcial**: la capa de verdad existe; faltan las métricas |
 | 10 | Visualización y exportación de resultados | `visualization/maps.py`, `io/raster_io.py` | Implementada |
 
 Las etapas 1 a 6 son el preprocesamiento que cerró la Semana 2 y las encadena
@@ -409,20 +409,62 @@ figura `kaolinite_signature_vs_pixel.png`.
 interactiva y cierra con la verificación de alineamiento entre el cubo y la
 firma de referencia.
 
-## Lo que falta: etapa 9, pendiente de Nivel 1
+## Etapa 9: la mitad hecha
 
-**9. Validación contra cartografía.** `validation/geology.py` (cargar los
-polígonos de SERNAGEOMIN y rasterizar la verdad de terreno) y
-`validation/metrics.py` (matriz de confusión, F1, IoU, ROC/AUC, kappa) son
-stubs completos: todas sus funciones levantan `NotImplementedError`. No hay
-verdad de terreno descargada en `data/external/`.
+### Lo que quedó hecho (Semana 4, Track A): la capa de verdad de terreno
+
+`validation/geology.py` está implementado. El camino completo es:
+
+```
+scripts/descargar_geologia.py
+   |
+   |-- FeatureServer Chile_Geology, layers 439 y 437, paginado con resultOffset
+   v
+data/external/geologia/{pozo_almonte,mamina}.geojson   (EPSG:32719, versionados)
+   |
+   |-- load_geology_polygons(ruta) ......... GeoDataFrame, exige CRS y polígonos
+   |-- clasificar_unidades(gdf, config) .... columna `clase` según el YAML
+   |-- rasterize_ground_truth(gdf, scene) .. reproyecta y rasteriza a la grilla
+   v
+outputs/maps/ground_truth.tif   (2000x2000, mismo crs y transform que el mapa
+                                 de ángulos; `write_geotiff` lo comprueba)
+```
+
+Lo encadena `build_ground_truth(config_path, scene)`, que además devuelve un
+dict de trazabilidad (archivos usados, polígonos y píxeles por clase, fracción
+del AOI, unidades sin clasificar). `scripts/construir_verdad_terreno.py` es la
+CLI que lo corre e imprime.
+
+La capa tiene **tres** valores: `1` positivo, `0` negativo y `255` ambiguo
+(unidad sin clasificar o píxel fuera de todo polígono). El porqué de la tercera
+clase está en [decisiones_tecnicas.md](decisiones_tecnicas.md), sección 9.
+
+Qué unidad cuenta como positivo **no está en el código**: se declara en
+`configs/verdad_terreno_tamarugal.yaml`, porque es un juicio geológico y no un
+dato del mapa. Con ese YAML sin llenar el pipeline corre igual y produce una
+capa 100 % ambigua, que es el estado en que está hoy.
+
+La figura F5, `outputs/figures/overlay_deteccion_geologia.png`, superpone el
+mapa de ángulos y los polígonos; la dibuja
+`visualization/maps.py::plot_overlay_geologia`.
+
+**Un detalle que hay que saber al consumir el .tif**: `write_geotiff` escribe
+siempre float32 con `nodata=NaN`, así que `ground_truth.tif` trae `1.0`, `0.0`
+y `255.0` en float32, no uint8. Los tres valores son exactos en float32, pero
+quien lo lea tiene que castear antes de comparar por igualdad.
+
+### Lo que falta: las métricas (Track B)
+
+`validation/metrics.py` (matriz de confusión, F1, IoU, ROC/AUC, kappa) y
+`scripts/evaluate.py` siguen siendo stubs completos: todas sus funciones
+levantan `NotImplementedError`.
 
 **Es lo que impide llamar «detección de caolinita» al mapa de la etapa 8.** Lo
 que hay es un mapa de similitud espectral: dice a qué distancia angular está
-cada píxel de la firma de laboratorio, no qué mineral hay en el suelo. Sin
-verdad de terreno no hay forma de estimar cuántos de esos píxeles son
-caolinita y cuántos son cualquier otra superficie que en 9 bandas se le
-parezca. Las cifras medidas están en la sección «Resultados» del
+cada píxel de la firma de laboratorio, no qué mineral hay en el suelo. La capa
+de verdad de terreno es la referencia contra la cual medirlo, pero medir es lo
+que todavía no se hizo. Quien lo haga tiene que excluir los `255` del cálculo.
+Las cifras medidas están en la sección «Resultados» del
 [README](../../README.md#resultados).
 
 `io/raster_io.py::read_scene()` también sigue sin implementarse. Es la

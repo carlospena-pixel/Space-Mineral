@@ -449,3 +449,256 @@ def plot_score_map(
     fig.tight_layout()
 
     return ax_mapa, ax_hist
+
+
+# Color por clase de la verdad de terreno. Fijo por valor y no por colormap,
+# por el mismo motivo que SCL_COLORS: un colormap se escala a las clases
+# presentes, y una capa sin positivos pintaria el ambiguo del color que le
+# tocaria al positivo mientras la leyenda afirma lo contrario.
+GROUND_TRUTH_COLORS: dict[int, str] = {
+    1: "#d95f02",  # positivo: unidad compatible con alteracion argilica
+    0: "#1b9e77",  # negativo: unidad claramente no candidata
+    255: "#999999",  # ambiguo: sin clasificar o fuera de la cartografia
+}
+
+GROUND_TRUTH_LABELS: dict[int, str] = {
+    1: "positivo (compatible con alteracion)",
+    0: "negativo (no candidata)",
+    255: "ambiguo (sin clasificar o sin cobertura)",
+}
+
+# Transparencia del relleno de los poligonos positivos. Alta a proposito: el
+# overlay tiene que dejar ver el mapa de angulos que hay debajo, que es la
+# mitad de la comparacion. Con relleno opaco la figura muestra la carta
+# geologica y esconde justo lo que se quiere cotejar contra ella.
+OVERLAY_ALPHA = 0.35
+
+# Grosor del contorno de los poligonos. Con 2758 poligonos en el AOI, un
+# contorno mas grueso tapa el fondo por acumulacion.
+OVERLAY_LINEWIDTH = 0.3
+
+# Longitudes candidatas de la barra de escala, en metros. Se elige la mayor que
+# ocupe menos de un cuarto del ancho de la figura.
+SCALEBAR_STEPS_M = (1000, 2000, 5000, 10000, 20000, 50000, 100000)
+
+
+def _dibujar_barra_de_escala(ax, izq: float, der: float, abajo: float) -> None:
+    """Dibuja una barra de escala en metros sobre el eje.
+
+    Los ticks en UTM ya dan la escala, pero obligan a restar dos numeros de
+    siete digitos para estimar una distancia. La barra la da de un vistazo, que
+    es lo que hace falta en una figura de presentacion.
+    """
+    ancho = der - izq
+    candidatas = [paso for paso in SCALEBAR_STEPS_M if paso < ancho / 4]
+    if not candidatas:
+        return
+    largo = max(candidatas)
+
+    x0 = izq + 0.05 * ancho
+    y0 = abajo + 0.04 * ancho
+
+    ax.plot(
+        [x0, x0 + largo],
+        [y0, y0],
+        color="black",
+        linewidth=3,
+        solid_capstyle="butt",
+    )
+    ax.text(
+        x0 + largo / 2,
+        y0 + 0.012 * ancho,
+        f"{largo // 1000} km",
+        ha="center",
+        va="bottom",
+        fontsize=9,
+    )
+
+
+def plot_overlay_geologia(
+    score_map,
+    scene,
+    polygons,
+    threshold: float | None = None,
+    ax=None,
+    title: str = "",
+    p_low: int = P_LOW_DEFAULT,
+    p_high: int = P_HIGH_DEFAULT,
+):
+    """Dibuja la deteccion espectral sobre la cartografia geologica (figura F5).
+
+    Es la figura que responde la pregunta de la Semana 4: ¿lo que el SAM marca
+    cae donde la geologia dice que podria haber alteracion? El mapa de angulos
+    va de fondo y los poligonos encima, con las unidades positivas rellenas y
+    todas contorneadas.
+
+    Los ejes van en coordenadas del CRS y no en indices de pixel: un overlay
+    cuyo eje dice "1200" no se puede cruzar con ninguna otra capa ni ubicar en
+    un SIG, que es justo lo que la figura tiene que permitir.
+
+    Parameters
+    ----------
+    score_map:
+        Mapa de angulos 2D `(alto, ancho)` con NaN en los pixeles invalidos,
+        tal como lo escribe el pipeline en
+        `outputs/maps/kaolinite_sam_angle.tif`.
+    scene:
+        Scene que produjo el mapa. Aporta `transform` y `crs`.
+    polygons:
+        GeoDataFrame ya clasificado, con la columna `clase` que agrega
+        `mineralmap.validation.geology.clasificar_unidades`. Se reproyecta a
+        `scene.crs` antes de dibujar.
+    threshold:
+        Si se da, el fondo es la mascara binaria de deteccion (angulo <=
+        umbral) en vez del mapa continuo. None dibuja el mapa continuo, que es
+        lo honesto mientras el umbral siga sin calibrar.
+    ax:
+        Eje de matplotlib donde dibujar. Si es None se crea una figura nueva.
+    title:
+        Titulo de la figura.
+    p_low, p_high:
+        Percentiles del recorte de la escala de color del fondo continuo.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        El eje usado.
+
+    Raises
+    ------
+    ValueError
+        Si `score_map` no es 2D, si su forma no calza con la del cubo de
+        `scene`, o si `polygons` no trae la columna `clase`.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    puntajes = np.asarray(score_map, dtype=float)
+
+    if puntajes.ndim != 2:
+        raise ValueError(
+            f"plot_overlay_geologia espera un mapa 2D (alto, ancho); recibi "
+            f"{puntajes.ndim} dimensiones con forma {puntajes.shape}."
+        )
+
+    forma_escena = tuple(scene.cube.shape[1:])
+    if puntajes.shape != forma_escena:
+        raise ValueError(
+            f"El mapa de puntaje {puntajes.shape} no calza con la forma "
+            f"espacial del Scene {forma_escena}; el overlay quedaria en las "
+            f"coordenadas de otra ventana."
+        )
+
+    if "clase" not in polygons.columns:
+        raise ValueError(
+            "Los poligonos no traen la columna 'clase'; hay que pasarlos por "
+            "`clasificar_unidades` antes de dibujar el overlay."
+        )
+
+    if ax is None:
+        _fig, ax = plt.subplots(figsize=(11, 10))
+
+    izq, abajo, der, arriba = array_bounds(*puntajes.shape, scene.transform)
+    extent = (izq, der, abajo, arriba)
+
+    if threshold is None:
+        finitos = puntajes[np.isfinite(puntajes)]
+        if finitos.size == 0:
+            vmin, vmax = 0.0, float(np.pi)
+        else:
+            vmin, vmax = (float(v) for v in np.nanpercentile(puntajes, (p_low, p_high)))
+            if vmax <= vmin:
+                vmin, vmax = float(finitos.min()), float(finitos.max())
+            if vmax <= vmin:
+                vmin, vmax = 0.0, float(np.pi)
+
+        imagen = ax.imshow(
+            puntajes,
+            # viridis_r por el mismo motivo que en plot_score_map: en el SAM el
+            # angulo chico es el parecido, asi que lo detectado tiene que salir
+            # oscuro sobre fondo claro.
+            cmap="viridis_r",
+            vmin=vmin,
+            vmax=vmax,
+            extent=extent,
+        )
+        barra = ax.figure.colorbar(imagen, ax=ax, fraction=0.046, pad=0.02)
+        barra.set_label("Angulo espectral (rad) --- mas oscuro = mas parecido")
+        etiqueta_fondo = "fondo: angulo espectral SAM"
+    else:
+        detectado = np.isfinite(puntajes) & (puntajes <= float(threshold))
+        ax.imshow(detectado, cmap="binary", vmin=0, vmax=1, extent=extent)
+        etiqueta_fondo = (
+            f"fondo: deteccion SAM (angulo <= {threshold:g} rad), "
+            f"{int(detectado.sum()):,} px"
+        )
+
+    proyectados = polygons.to_crs(scene.crs)
+
+    # Se dibuja clase por clase y no de una sola vez para poder dar a cada una
+    # su color y su relleno, y para que la leyenda pueda decir cuantos
+    # poligonos hay de cada una en vez de solo nombrar los colores.
+    presentes: list[tuple[int, int]] = []
+    for valor in (255, 0, 1):
+        subconjunto = proyectados[proyectados["clase"] == valor]
+        if subconjunto.empty:
+            continue
+        presentes.append((valor, len(subconjunto)))
+
+        # Solo el positivo se rellena. Rellenar tambien el ambiguo, que hoy es
+        # todo el AOI, taparia el mapa de angulos entero y la figura dejaria de
+        # mostrar la comparacion que justifica su existencia.
+        subconjunto.plot(
+            ax=ax,
+            facecolor=GROUND_TRUTH_COLORS[valor] if valor == 1 else "none",
+            edgecolor=GROUND_TRUTH_COLORS[valor],
+            linewidth=OVERLAY_LINEWIDTH,
+            alpha=OVERLAY_ALPHA if valor == 1 else 1.0,
+        )
+
+    # Los limites se fijan DESPUES de dibujar los poligonos: las hojas se
+    # extienden bastante mas alla del AOI (la union llega a E 499.815 contra
+    # los 459.960 del AOI) y sin fijarlos geopandas reencuadra la figura sobre
+    # la carta completa, dejando el mapa de angulos como un recuadro pequeno.
+    ax.set_xlim(izq, der)
+    ax.set_ylim(abajo, arriba)
+
+    _dibujar_barra_de_escala(ax, izq, der, abajo)
+
+    manijas = [
+        Patch(
+            facecolor=GROUND_TRUTH_COLORS[valor] if valor == 1 else "none",
+            edgecolor=GROUND_TRUTH_COLORS[valor],
+            alpha=OVERLAY_ALPHA if valor == 1 else 1.0,
+            label=f"{GROUND_TRUTH_LABELS[valor]} --- {n:,} poligonos",
+        )
+        for valor, n in presentes
+    ]
+    # Las clases ausentes se nombran igual: una leyenda que solo lista lo
+    # presente deja creer que las otras clases no existen en el esquema. Que no
+    # haya ni un poligono positivo es el resultado principal de esta figura, no
+    # una omision de la leyenda.
+    vistas = {valor for valor, _ in presentes}
+    manijas += [
+        Patch(
+            facecolor="none",
+            edgecolor="none",
+            label=f"({GROUND_TRUTH_LABELS[valor]}: ninguno en el AOI)",
+        )
+        for valor in (1, 0, 255)
+        if valor not in vistas
+    ]
+
+    ax.legend(
+        handles=manijas,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.08),
+        fontsize=8,
+        frameon=False,
+    )
+
+    ax.set_xlabel(f"Este ({scene.crs.to_string()})")
+    ax.set_ylabel("Norte")
+    ax.set_title(title or f"Deteccion sobre la cartografia geologica\n{etiqueta_fondo}")
+
+    return ax
