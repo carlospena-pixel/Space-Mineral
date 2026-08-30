@@ -130,7 +130,7 @@ target shape in pixels and the resampling method.
 (integers).
 
 The AOI can be requested three ways: `None` uses `DEFAULT_AOI_WINDOW`
-(`col_off=1000, row_off=1000, 2000×2000` px at 20 m, i.e. 40 × 40 km); a
+(`col_off=2700, row_off=650, 2000×2000` px at 20 m, i.e. 40 × 40 km); a
 `Window` is used as is; a WGS84 bbox is reprojected with `transform_bounds` and
 rounded to whole pixels. An AOI that misses the tile is a `ValueError`; one that
 only partly overlaps is cropped with a warning.
@@ -264,7 +264,7 @@ alignment is verified at three levels
 ## The implemented flow: from `Config` to map
 
 ```
-configs/tamarugal_kaolinite.yaml
+configs/cerro_colorado_kaolinite.yaml
    |
    |-- load_config(path) ................... Config (scene, aoi, mineral, algorithm, output)
    |
@@ -397,7 +397,7 @@ From the repository root, with the environment from the
 | `python scripts/visualizar_rgb.py` | True-colour composite (B4/B3/B2) with a percentile stretch | `outputs/figures/scene_rgb.png` |
 | `python scripts/visualizar_mascara.py` | Re-reads SCL over the `Scene` window and draws it next to `Scene.mask` | `outputs/figures/mascara_scl.png` |
 | `python scripts/plot_kaolinite_signature.py` | Kaolinite reference signature, band by band | `outputs/figures/kaolinite_signature.png` |
-| `python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml` | Stages 7, 8 and 10 end to end: resolves the `Scene`, runs the detector and prints the summary | `outputs/maps/kaolinite_sam_angle.tif` and `outputs/figures/kaolinite_sam_angle.png` |
+| `python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml` | Stages 7, 8 and 10 end to end: resolves the `Scene`, runs the detector and prints the summary | `outputs/maps/kaolinite_sam_angle.tif` and `outputs/figures/kaolinite_sam_angle.png` |
 | `python scripts/verificar_cifras.py` | Recomputes from the `.tif` the figures the README and section 7 publish, compares them against what those files say, and exits 1 if any disagrees | Nothing: it only reads and prints |
 
 `visualizar_rgb.py` and `visualizar_mascara.py` load `data/interim/scene.npz`
@@ -441,7 +441,7 @@ ambiguous (unclassified unit, or pixel outside every polygon). Why the third
 class exists is in [technical_decisions.md](technical_decisions.md), section 9.
 
 Which unit counts as positive is **not in the code**: it is declared in
-`configs/verdad_terreno_tamarugal.yaml`, because it is a geological judgement
+`configs/verdad_terreno_cerro_colorado.yaml`, because it is a geological judgement
 and not a fact from the map. With that YAML left empty the pipeline still runs
 and produces a 100 % ambiguous layer, which is where it stands today.
 

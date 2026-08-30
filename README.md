@@ -25,7 +25,7 @@ pip install -e ".[dev]"
 pre-commit install
 
 # Correr un experimento: deja el GeoTIFF en outputs/maps/ y el heatmap en outputs/figures/
-python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml
+python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml
 
 # Validar contra cartografía: todavía no, scripts/evaluate.py es andamiaje (etapa 9)
 ```
@@ -61,26 +61,39 @@ más abajo). El estado etapa por etapa está en
 | | |
 |---|---|
 | Producto | `S2B_MSIL2A_20251231T144729_N0511_R139_T19KDT_20251231T200248.SAFE` |
-| Tile / CRS | `T19KDT` (Pampa del Tamarugal, Tarapacá) / EPSG:32719 |
-| AOI | ventana `col_off=1000, row_off=1000, 2000 × 2000` px a 20 m, o sea **40 × 40 km** |
+| Tile / CRS | `T19KDT` (distrito Cerro Colorado, Precordillera de Tarapacá) / EPSG:32719 |
+| AOI | ventana `col_off=2700, row_off=650, 2000 × 2000` px a 20 m, o sea **40 × 40 km** |
+| Extensión | E 453.960–493.960 / N 7.747.040–7.787.040 (EPSG:32719) |
 | Cubo | `(12, 2000, 2000)` `float32`, reflectancia en `[0, 1]`, baseline `05.11` |
-| Suelo desnudo (SCL 5) | **99,92 %** del AOI |
-| Píxeles válidos | **99,9977 %**: 3.999.908 de 4.000.000, o sea 92 descartados |
+| Suelo desnudo (SCL 5) | **99,8085 %** del AOI |
+| Píxeles válidos | **99,8484 %**: 3.993.936 de 4.000.000, o sea 6.064 descartados |
 
 Las dos últimas cifras salen de `Scene.meta["scl_summary"]` y las imprime
 `python scripts/construir_scene.py`. Son la condición que se buscaba al elegir
 la zona: desierto despejado, sin nubes ni vegetación que tapen la superficie
-que se quiere medir.
+que se quiere medir. Lo descartado es casi todo sombra topográfica
+(0,1505 % del AOI): la ventana entra en la Precordillera y tiene relieve,
+a diferencia de la ventana anterior sobre la pampa plana.
+
+**El AOI se movió en la Semana 5.** La ventana anterior
+(`col_off=1000, row_off=1000`) caía íntegra sobre el relleno sedimentario
+de la Pampa del Tamarugal, sin una sola unidad con alteración hidrotermal
+cartografiada, así que el criterio E3 del plan —«las detecciones se
+concentran preferentemente en zonas de alteración documentadas»— no se
+podía ni formular. La ventana nueva se desplaza al noreste para incluir el
+distrito de pórfido cuprífero Cerro Colorado. El detalle está en
+[docs/es/decisiones_tecnicas.md](docs/es/decisiones_tecnicas.md),
+sección 10.
 
 ### Figuras (`outputs/figures/`)
 
 | Figura | Qué muestra |
 |---|---|
 | `scene_rgb.png` | El AOI en color verdadero (B4/B3/B2) con realce por percentiles 2–98 banda a banda. Sirve para ubicarse: es la referencia visual de dónde caen las demás figuras. |
-| `mascara_scl.png` | La clasificación SCL del AOI con su leyenda, al lado de la máscara de validez que sale de ella. Es la evidencia de las cifras de la tabla anterior: se ve que lo descartado son 92 píxeles sueltos y no una región. |
+| `mascara_scl.png` | La clasificación SCL del AOI con su leyenda, al lado de la máscara de validez que sale de ella. Es la evidencia de las cifras de la tabla anterior: se ve que lo descartado son 6.064 píxeles de sombra topográfica en el relieve del este, no una región tapada por nubes. |
 | `kaolinite_signature.png` | La firma de referencia de la caolinita (USGS splib07, muestra KGa-1) en las 12 bandas del contrato, con la caída B11 → B12 del rasgo de absorción Al–OH resaltada. El eje x es el índice de banda: es la figura anterior a `plot_spectra`. |
-| `kaolinite_signature_vs_pixel.png` | Esa misma firma superpuesta a dos píxeles reales de la **ventana de exploración de 256 × 256 px** del notebook (no del AOI completo): el de menor ángulo SAM de esa ventana —0,1640 rad— y el central como control. Con las 12 bandas alineadas, normalización L2 y el eje x en longitud de onda. Es el hito de la Semana 2: muestra que el cubo y la firma hablan de la misma banda, y de paso que el píxel graficado no reproduce la caída **pronunciada** de la caolinita entre B11 y B12 (razón 0,944 contra 0,507 de la firma USGS): desciende, pero apenas. |
-| `kaolinite_sam_angle.png` | El hito de la Semana 3: el mapa de ángulo espectral del AOI completo con los ejes en UTM, al lado del histograma de los 3.999.908 ángulos válidos. Es la evidencia de coherencia espectral, pero no por la forma de la cola: la distribución **no** es simétrica —la asimetría es +0,76 y la cola larga va hacia los ángulos **altos**—. Lo que sostiene la coherencia es el exceso en el extremo bajo: 0,1 rad está a 5,2 desviaciones estándar bajo la media, donde una gaussiana daría 0,43 píxeles en 4 millones. Hay 62. Es 143 veces el ruido. Y el mapa dibuja la red de drenaje y el piedemonte, no manchas al azar. |
+| `kaolinite_signature_vs_pixel.png` | Esa misma firma superpuesta a dos píxeles reales de la **ventana de exploración de 256 × 256 px** del notebook (no del AOI completo): el de menor ángulo SAM de esa ventana —0,1701 rad— y el central como control. Con las 12 bandas alineadas, normalización L2 y el eje x en longitud de onda. Es el hito de la Semana 2: muestra que el cubo y la firma hablan de la misma banda, y de paso que el píxel graficado no reproduce la caída **pronunciada** de la caolinita entre B11 y B12 (razón 0,953 contra 0,507 de la firma USGS): desciende, pero apenas. |
+| `kaolinite_sam_angle.png` | El hito de la Semana 3: el mapa de ángulo espectral del AOI completo con los ejes en UTM, al lado del histograma de los 3.993.936 ángulos válidos. La distribución **no** es simétrica —la asimetría es +0,55 y la cola larga va hacia los ángulos **altos**—. En el extremo bajo hay un exceso, pero modesto: 0,1 rad está a 4,3 desviaciones estándar bajo la media, donde una gaussiana daría 40 píxeles en 4 millones. Hay 131, o sea unas 3 veces el ruido. Sobre el AOI anterior esa razón era de 143 veces; la diferencia no es que el detector empeorara sino que este AOI tiene mucha más variedad litológica y su distribución de ángulos es más ancha. |
 
 ### Detección: un mapa de ángulos sin validar
 
@@ -92,37 +105,62 @@ proyecto. Los ángulos están verificados contra casos cuyo valor exacto se cono
 por geometría, no por comparación con otra implementación
 (`docs/es/decisiones_tecnicas.md`, sección 8).
 
-`python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml`
+`python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml`
 corre de extremo a extremo y produce `outputs/maps/kaolinite_sam_angle.tif`
 (GeoTIFF `float32`, EPSG:32719, `NaN` como nodata) más el heatmap de arriba.
 Medido sobre el AOI completo, con las 9 bandas de `SAM_BANDS`:
 
 | | ángulo (rad) |
 |---|---|
-| mínimo | 0,0723 |
-| percentil 1 | 0,2055 |
-| mediana | 0,2742 |
-| máximo | 0,6971 |
+| mínimo | 0,0662 |
+| percentil 1 | 0,2004 |
+| mediana | 0,2795 |
+| máximo | 0,6859 |
 
-Barrido de umbrales, sobre 3.999.908 píxeles válidos:
+Barrido de umbrales, sobre 3.993.936 píxeles válidos:
 
 | umbral (rad) | píxeles | % del AOI válido |
 |---|---|---|
 | 0,05 | 0 | 0,000 % |
-| 0,08 | 5 | 0,000 % |
-| 0,10 | 62 | 0,002 % |
-| 0,15 | 4.513 | 0,113 % |
-| 0,20 | 30.885 | 0,772 % |
+| 0,08 | 28 | 0,001 % |
+| 0,10 | 131 | 0,003 % |
+| 0,15 | 1.482 | 0,037 % |
+| 0,20 | 38.672 | 0,968 % |
 
-**Nada de esto es caolinita detectada.** Son 62 píxeles sueltos de 4 millones
+**Nada de esto es caolinita detectada.** Son 131 píxeles sueltos de 4 millones
 bajo el umbral que fija el config, y el ángulo espectral mide parecido con una
 firma de laboratorio, no presencia de un mineral: cualquier superficie que en
-9 bandas se parezca cae igual de bajo. La validación contra cartografía de
-SERNAGEOMIN (`validation/`) sigue siendo andamiaje, así que no hay con qué
-estimar cuántos de esos píxeles son el mineral. El umbral `0.1` tampoco se
-cambia: espera un criterio de calibración y no otro número elegido a ojo
-(`docs/es/decisiones_tecnicas.md`, sección 7, donde la misma medición sobre una
-ventana de 256 × 256 px daba 0 de 65.536 píxeles).
+9 bandas se parezca cae igual de bajo. El umbral `0.1` no se cambia: espera un
+criterio de calibración y no otro número elegido a ojo
+(`docs/es/decisiones_tecnicas.md`, sección 7).
+
+#### Dónde caen esas 131 detecciones
+
+Desde la Semana 4 existe la capa de verdad de terreno
+(`outputs/maps/ground_truth.tif`), así que la pregunta se puede contar. Es un
+conteo, no una métrica: F1, IoU y ROC/AUC siguen sin implementarse.
+
+| clase de la verdad de terreno | píxeles del AOI | detecciones a 0,1 rad |
+|---|---|---|
+| positivo (alteración cartografiada) | 50.773 (1,27 %) | **0** |
+| negativo (no candidata) | 192.444 (4,81 %) | **0** |
+| ambiguo (sin clasificar) | 3.756.783 (93,92 %) | **131** |
+
+**Las 131 detecciones caen fuera de toda unidad de alteración cartografiada.**
+Y no están repartidas: **130 de las 131 caen sobre una sola unidad**,
+`Depositos antropicos, botaderos de mina` —los botaderos de la mina Cerro
+Colorado, que ocupan 16,79 km², el 1,05 % del AOI—. La 131 cae sobre una
+facies conglomerádica de la Formación Altos de Pica.
+
+La lectura más simple es que el SAM está encontrando roca molida y recién
+expuesta, sin la costra ni el barniz del desierto que cubren la superficie
+natural, y que en esa roca hay arcilla. Es un resultado espacialmente
+coherentísimo —130 aciertos en el 1 % del área— pero **no** valida la
+detección de alteración *in situ*, que es lo que pide E3: dentro de las
+unidades declaradas positivo el ángulo mínimo es 0,1541 rad, muy por encima
+del umbral. Cómo se clasifican los botaderos decide por completo la respuesta
+a E3, y por eso está declarado y argumentado en
+`configs/verdad_terreno_cerro_colorado.yaml` en vez de resolverse por omisión.
 
 ---
 
@@ -149,7 +187,7 @@ conda activate mineralmap
 pip install -e ".[dev]"
 pre-commit install
 
-python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml
+python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml
 ```
 
 `data/` is not versioned; see `docs/en/pipeline.md` for how to obtain it.
@@ -170,26 +208,38 @@ status is in [docs/en/pipeline.md](docs/en/pipeline.md).
 | | |
 |---|---|
 | Product | `S2B_MSIL2A_20251231T144729_N0511_R139_T19KDT_20251231T200248.SAFE` |
-| Tile / CRS | `T19KDT` (Pampa del Tamarugal, Tarapacá Region, Chile) / EPSG:32719 |
-| AOI | window `col_off=1000, row_off=1000, 2000 × 2000` px at 20 m, i.e. **40 × 40 km** |
+| Tile / CRS | `T19KDT` (Cerro Colorado district, Tarapacá Precordillera, Chile) / EPSG:32719 |
+| AOI | window `col_off=2700, row_off=650, 2000 × 2000` px at 20 m, i.e. **40 × 40 km** |
+| Extent | E 453,960–493,960 / N 7,747,040–7,787,040 (EPSG:32719) |
 | Cube | `(12, 2000, 2000)` `float32`, reflectance in `[0, 1]`, baseline `05.11` |
-| Bare soil (SCL 5) | **99.92 %** of the AOI |
-| Valid pixels | **99.9977 %**: 3,999,908 out of 4,000,000, i.e. 92 discarded |
+| Bare soil (SCL 5) | **99.8085 %** of the AOI |
+| Valid pixels | **99.8484 %**: 3,993,936 out of 4,000,000, i.e. 6,064 discarded |
 
 The last two figures come from `Scene.meta["scl_summary"]` and are printed by
 `python scripts/construir_scene.py`. They are the condition the study area was
 chosen for: clear desert, with no cloud or vegetation covering the surface to
-be measured.
+be measured. What gets discarded is almost entirely topographic shadow
+(0.1505 % of the AOI): the window reaches into the Precordillera and has
+relief, unlike the previous window over the flat pampa.
+
+**The AOI moved in Week 5.** The previous window
+(`col_off=1000, row_off=1000`) fell entirely on the sedimentary fill of the
+Pampa del Tamarugal, without a single mapped hydrothermal alteration unit, so
+criterion E3 of the plan — "detections concentrate preferentially in
+documented alteration zones" — could not even be stated. The new window
+shifts northeast to take in the Cerro Colorado porphyry copper district. The
+details are in
+[docs/en/technical_decisions.md](docs/en/technical_decisions.md), section 10.
 
 #### Figures (`outputs/figures/`)
 
 | Figure | What it shows |
 |---|---|
 | `scene_rgb.png` | The AOI in true colour (B4/B3/B2) with a 2–98 percentile stretch applied band by band. It is the visual reference for where everything else sits. |
-| `mascara_scl.png` | The AOI's SCL classification with its legend, next to the validity mask derived from it. It is the evidence behind the table above: what gets discarded is 92 scattered pixels, not a region. |
+| `mascara_scl.png` | The AOI's SCL classification with its legend, next to the validity mask derived from it. It is the evidence behind the table above: what gets discarded is 6,064 pixels of topographic shadow over the relief in the east, not a region hidden by cloud. |
 | `kaolinite_signature.png` | The kaolinite reference signature (USGS splib07, sample KGa-1) across the 12 contract bands, highlighting the B11 → B12 drop of the Al–OH absorption feature. The x axis is the band index: this is the figure that predates `plot_spectra`. |
-| `kaolinite_signature_vs_pixel.png` | That same signature overlaid on two real pixels from the notebook's **256 × 256 px exploration window** (not the full AOI): that window's lowest SAM angle pixel — 0.1640 rad — and the central one as a control. With the 12 bands aligned, L2 normalisation and wavelength on the x axis. This is the Week 2 milestone: it shows that cube and signature talk about the same band, and incidentally that the plotted pixel does not reproduce kaolinite's **steep** B11 → B12 drop (ratio 0.944 against the USGS signature's 0.507): it does descend, but barely. |
-| `kaolinite_sam_angle.png` | The Week 3 milestone: the spectral angle map of the full AOI with UTM axes, next to the histogram of the 3,999,908 valid angles. It is the spectral-coherence evidence, but not through the shape of the tail: the distribution is **not** symmetric — skewness is +0.76 and the long tail runs towards **high** angles. What carries the coherence is the excess at the low end: 0.1 rad sits 5.2 standard deviations below the mean, where a Gaussian would give 0.43 pixels in 4 million. There are 62. That is 143 times the noise. And the map traces the drainage network and the piedmont, not random blotches. |
+| `kaolinite_signature_vs_pixel.png` | That same signature overlaid on two real pixels from the notebook's **256 × 256 px exploration window** (not the full AOI): that window's lowest SAM angle pixel — 0.1701 rad — and the central one as a control. With the 12 bands aligned, L2 normalisation and wavelength on the x axis. This is the Week 2 milestone: it shows that cube and signature talk about the same band, and incidentally that the plotted pixel does not reproduce kaolinite's **steep** B11 → B12 drop (ratio 0.953 against the USGS signature's 0.507): it does descend, but barely. |
+| `kaolinite_sam_angle.png` | The Week 3 milestone: the spectral angle map of the full AOI with UTM axes, next to the histogram of the 3,993,936 valid angles. The distribution is **not** symmetric — skewness is +0.55 and the long tail runs towards **high** angles. There is an excess at the low end, but a modest one: 0.1 rad sits 4.3 standard deviations below the mean, where a Gaussian would give 40 pixels in 4 million. There are 131, about 3 times the noise. Over the previous AOI that ratio was 143 times; the difference is not that the detector got worse but that this AOI holds far more lithological variety and its angle distribution is correspondingly wider. |
 
 #### Detection: an unvalidated angle map
 
@@ -201,37 +251,62 @@ project's document 05. The angles are verified against cases whose exact value
 is known by geometry, not by comparison with another implementation
 (`docs/en/technical_decisions.md`, section 8).
 
-`python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml` runs
-end to end and produces `outputs/maps/kaolinite_sam_angle.tif` (`float32`
+`python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml`
+runs end to end and produces `outputs/maps/kaolinite_sam_angle.tif` (`float32`
 GeoTIFF, EPSG:32719, `NaN` as nodata) plus the heatmap above. Measured over the
 full AOI with the 9 bands of `SAM_BANDS`:
 
 | | angle (rad) |
 |---|---|
-| minimum | 0.0723 |
-| 1st percentile | 0.2055 |
-| median | 0.2742 |
-| maximum | 0.6971 |
+| minimum | 0.0662 |
+| 1st percentile | 0.2004 |
+| median | 0.2795 |
+| maximum | 0.6859 |
 
-Threshold sweep, over 3,999,908 valid pixels:
+Threshold sweep, over 3,993,936 valid pixels:
 
 | threshold (rad) | pixels | % of valid AOI |
 |---|---|---|
 | 0.05 | 0 | 0.000 % |
-| 0.08 | 5 | 0.000 % |
-| 0.10 | 62 | 0.002 % |
-| 0.15 | 4,513 | 0.113 % |
-| 0.20 | 30,885 | 0.772 % |
+| 0.08 | 28 | 0.001 % |
+| 0.10 | 131 | 0.003 % |
+| 0.15 | 1,482 | 0.037 % |
+| 0.20 | 38,672 | 0.968 % |
 
-**None of this is detected kaolinite.** It is 62 scattered pixels out of 4
+**None of this is detected kaolinite.** It is 131 scattered pixels out of 4
 million below the threshold the config sets, and the spectral angle measures
 resemblance to a laboratory signature, not the presence of a mineral: any
-surface that looks similar across 9 bands scores just as low. Validation
-against SERNAGEOMIN mapping (`validation/`) is still scaffolding, so there is
-nothing to estimate how many of those pixels are the mineral. The `0.1`
+surface that looks similar across 9 bands scores just as low. The `0.1`
 threshold is not changed either: it awaits a calibration criterion rather than
-another number picked by eye (`docs/en/technical_decisions.md`, section 7,
-where the same measurement over a 256 × 256 px window gave 0 out of 65,536).
+another number picked by eye (`docs/en/technical_decisions.md`, section 7).
+
+##### Where those 131 detections fall
+
+Since Week 4 the ground-truth layer exists (`outputs/maps/ground_truth.tif`), so
+the question can be counted. This is a count, not a metric: F1, IoU and ROC/AUC
+remain unimplemented.
+
+| ground-truth class | AOI pixels | detections at 0.1 rad |
+|---|---|---|
+| positive (mapped alteration) | 50,773 (1.27 %) | **0** |
+| negative (non-candidate) | 192,444 (4.81 %) | **0** |
+| ambiguous (unclassified) | 3,756,783 (93.92 %) | **131** |
+
+**All 131 detections fall outside every mapped alteration unit.** And they are
+not scattered: **130 of the 131 land on a single unit**, `Depositos antropicos,
+botaderos de mina` — the waste dumps of the Cerro Colorado mine, covering
+16.79 km², 1.05 % of the AOI. The 131st falls on a conglomeratic facies of the
+Altos de Pica Formation.
+
+The simplest reading is that SAM is finding crushed, freshly exposed rock —
+without the desert crust and varnish that coat the natural surface — and that
+this rock contains clay. It is an extremely coherent spatial result — 130 hits
+inside 1 % of the area — but it does **not** validate detection of *in situ*
+alteration, which is what E3 asks for: within the units declared positive the
+minimum angle is 0.1541 rad, well above the threshold. How the waste dumps get
+classified decides the answer to E3 outright, which is why it is declared and
+argued in `configs/verdad_terreno_cerro_colorado.yaml` rather than settled by
+omission.
 
 ## License
 

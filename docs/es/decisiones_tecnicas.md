@@ -204,32 +204,38 @@ bandas extra es memoria, y es barato comparado con volver a leer el producto.
 
 | Parámetro | Valor |
 |-----------|-------|
-| Tile | `T19KDT` (Pampa del Tamarugal, Región de Tarapacá) |
+| Tile | `T19KDT` (distrito Cerro Colorado, Precordillera de Tarapacá) |
 | Producto | `S2B_MSIL2A_20251231T144729_N0511_R139_T19KDT_20251231T200248.SAFE` |
 | CRS | EPSG:32719 (UTM 19S) |
-| Ventana AOI | `col_off=1000, row_off=1000, width=2000, height=2000`, en la grilla de 20 m |
-| Extensión | 40 × 40 km |
-| Bbox WGS84 | `[-69.7673, -20.4377, -69.383, -20.075]` |
+| Ventana AOI | `col_off=2700, row_off=650, width=2000, height=2000`, en la grilla de 20 m |
+| Extensión | 40 × 40 km, E 453.960–493.960 / N 7.747.040–7.787.040 |
+| Bbox WGS84 | `[-69.4412, -20.3748, -69.0577, -20.0128]` |
 
 **La ventana en píxeles es la definición autoritativa; el bbox es informativo.**
 La ventana define un recorte exacto y reproducible sobre la grilla del tile,
 mientras que el bbox pasa por una reproyección y termina redondeado. Cuando se
 pasa un bbox a `build_scene_from_safe`, se reproyecta con `transform_bounds`,
 se convierte a ventana y se redondea con `round_offsets().round_lengths()`.
-Ambos valores conviven en `configs/tamarugal_kaolinite.yaml` con esa jerarquía
+Ambos valores conviven en `configs/cerro_colorado_kaolinite.yaml` con esa jerarquía
 anotada.
 
-**La zona cambió respecto del plan original.** El proyecto apuntaba al distrito
-de Chuquicamata (Calama, Región de Antofagasta); se movió a Pampa del Tamarugal
-por disponibilidad de datos. El config `chuqui_kaolinite.yaml` quedó obsoleto y
-fue renombrado a `tamarugal_kaolinite.yaml`. Solo hay una versión válida de este
-dato: cualquier mención a Chuquicamata como zona de estudio activa en otro
-archivo del repositorio es un residuo y debe corregirse.
+**La zona cambió dos veces.** El proyecto apuntaba al distrito de Chuquicamata
+(Calama, Región de Antofagasta); se movió a Pampa del Tamarugal en la Semana 2
+por disponibilidad de datos, y en la Semana 5 se desplazó al noreste, al
+distrito Cerro Colorado, porque sobre la pampa no había alteración cartografiada
+contra la cual validar (sección 10). El config se llamó sucesivamente
+`chuqui_kaolinite.yaml`, `tamarugal_kaolinite.yaml` y hoy
+`cerro_colorado_kaolinite.yaml`. Solo hay una versión válida de este dato:
+cualquier mención a Chuquicamata o a Tamarugal como zona de estudio activa en
+otro archivo del repositorio es un residuo y debe corregirse.
 
-La escena está prácticamente despejada: 99,9977 % de píxeles válidos en el AOI,
-99,92 % clasificados como suelo desnudo. Es una condición deliberada —desierto
+La escena sigue prácticamente despejada: 99,8484 % de píxeles válidos en el AOI,
+99,8085 % clasificados como suelo desnudo. Es una condición deliberada —desierto
 absoluto, sin vegetación ni nubes— porque el objetivo es detectar una firma
-mineral en superficie y cualquier cobertura la enmascara.
+mineral en superficie y cualquier cobertura la enmascara. Lo descartado es casi
+todo sombra topográfica (0,1505 %), que es el precio de entrar en la
+Precordillera: la ventana anterior, sobre la pampa plana, descartaba 92 píxeles
+y ésta descarta 6.064. Sigue siendo despreciable frente a los 4 millones.
 
 ## 4. Máscara de validez
 
@@ -414,121 +420,98 @@ no esté, el test que lo consume queda en `skipif`. Lo mismo vale para
 
 ### El umbral del config sigue sin calibrar
 
-Hay **dos mediciones a dos escalas distintas**, y se conservan las dos porque
-dicen cosas diferentes. Ninguna reemplaza a la otra: la primera es la que se
-hizo en Semana 2 sobre una submuestra, y la segunda es la del AOI que el
-pipeline recorre hoy de extremo a extremo.
-
-**Ventana de 256×256 px** (65.536 píxeles, 100 % válidos, todos suelo desnudo),
-con el cubo enmascarado:
-
-| bandas | mín | mediana | máx | bajo umbral 0,1 |
-|--------|-----|---------|-----|-----------------|
-| `SAM_BANDS` (9)   | 0,164 | 0,250 | 0,453 | 0 de 65.536 |
-| `BAND_ORDER` (12) | 0,166 | 0,247 | 0,426 | 0 de 65.536 |
-
-**AOI completo, 2000×2000 px** (3.999.908 píxeles válidos de 4.000.000, o sea
-99,9977 %). Sale del resumen que imprime
-`python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml`:
+**AOI completo, 2000×2000 px** (3.993.936 píxeles válidos de 4.000.000, o sea
+99,8484 %). Sale del resumen que imprime
+`python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml`:
 
 | bandas | mín | p1 | mediana | máx |
 |--------|-----|----|---------|-----|
-| `SAM_BANDS` (9) | 0,0723 | 0,2055 | 0,2742 | 0,6971 |
+| `SAM_BANDS` (9) | 0,0662 | 0,2004 | 0,2795 | 0,6859 |
 
 | umbral (rad) | píxeles | % del AOI válido |
 |--------------|---------|------------------|
 | 0,05 | 0 | 0,000 % |
-| 0,08 | 5 | 0,000 % |
-| 0,10 | **62** | 0,002 % |
-| 0,15 | 4.513 | 0,113 % |
-| 0,20 | 30.885 | 0,772 % |
+| 0,08 | 28 | 0,001 % |
+| 0,10 | **131** | 0,003 % |
+| 0,15 | 1.482 | 0,037 % |
+| 0,20 | 38.672 | 0,968 % |
 
-Las dos tablas del AOI completo tienen **solo la fila de 9 bandas**: el
-pipeline corre `SAM_BANDS` y es lo único que hay medido a esta escala. No se
-repitió el experimento con `BAND_ORDER` sobre los 4 millones de píxeles, así
-que esa fila no existe y no se estima.
+La tabla tiene **solo la fila de 9 bandas**: el pipeline corre `SAM_BANDS` y es
+lo único que hay medido a esta escala. No se repitió el experimento con
+`BAND_ORDER` sobre los 4 millones de píxeles, así que esa fila no existe y no
+se estima.
 
-#### Qué son los 62 píxeles: sigue sin ser una detección
+Estas cifras son de la ventana de Cerro Colorado. Las del AOI anterior, sobre
+la Pampa del Tamarugal, están en la sección 10 y en el `CHANGELOG.md`, que es
+donde se cuenta el cambio; no se conservan aquí para que este documento tenga
+un solo juego de números vigentes.
+
+#### Qué son los 131 píxeles: sigue sin ser una detección
 
 Lo que sigue es evidencia a favor, y no alcanza. **La dirección de un rasgo de
-absorción no identifica un mineral** mientras la etapa 9 no exista: sin verdad
-de terreno no hay forma de separar caolinita de cualquier otra superficie que
-descienda entre B11 y B12. Se escribe porque estaba medido y sin registrar, no
-porque cierre nada.
+absorción no identifica un mineral**: sin cotejar contra verdad de terreno no
+hay forma de separar caolinita de cualquier otra superficie que descienda entre
+B11 y B12.
 
-Los 62 píxeles bajo 0,1 rad **reproducen la absorción Al–OH en dirección**:
+Los 131 píxeles bajo 0,1 rad **reproducen la absorción Al–OH en dirección**:
 
-| | los 62 | fondo (3.999.846 válidos) | firma USGS KGa-1 |
+| | los 131 | fondo (3.993.805 válidos) | firma USGS KGa-1 |
 |---|---|---|---|
-| razón B12/B11 (mediana) | **0,679** | 1,011 | 0,507 |
-| con razón < 1 | **62 de 62** | 44 % | — |
-| reflectancia media, 9 bandas | 0,391 | 0,229 | — |
-| clase SCL | **62 de 62 en 5 (suelo desnudo)** | — | — |
+| razón B12/B11 (mediana) | **0,663** | 1,000 | 0,507 |
+| con razón < 1 | **131 de 131** | 50 % | — |
+| reflectancia media, 9 bandas | 0,278 | 0,207 | — |
 
-Los 62 descienden de B11 a B12, los 62 caen sobre suelo desnudo y ninguno toca
-el borde del AOI —el más cercano está a 7 px—, así que no son artefactos de
-recorte. Se agrupan en 26 componentes conexas de 8 vecinos, la mayor de 9
-píxeles: son parches, no ruido de un píxel suelto. Y no están aislados en su
-entorno: **la mediana del vecindario de 5 × 5 sin el píxel central** —los 24
-vecinos, con `np.nanmedian`— vale 0,1394 rad contra 0,2742 de la escena, y en
-38 de los 62 ese vecindario también queda bajo 0,15. El estadístico se nombra
-porque cambia la respuesta: con la media del mismo vecindario da 0,1522 y 28
-de 62. El descenso es menos
-pronunciado que el de la firma de laboratorio (0,679 contra 0,507), que es lo
-esperable de un píxel de 20 m donde el mineral, si está, viene mezclado con
-todo lo demás que hay en 400 m².
+Los 131 descienden de B11 a B12 y ninguno toca el borde del AOI —el más cercano
+está a 248 px—, así que no son artefactos de recorte. Se agrupan en 20
+componentes conexas de 8 vecinos, la mayor de 79 píxeles: son parches, no ruido
+de un píxel suelto. Y no están aislados en su entorno: **la mediana del
+vecindario de 5 × 5** vale 0,1020 rad contra 0,2795 de la escena, y en 123 de
+los 131 ese vecindario también queda bajo 0,15. Con la media del mismo
+vecindario da 0,1143 y 121 de 131; se nombra el estadístico porque las dos
+cifras difieren. El descenso es menos pronunciado que el de la firma de
+laboratorio (0,663 contra 0,507), que es lo esperable de un píxel de 20 m donde
+el mineral, si está, viene mezclado con todo lo demás que hay en 400 m².
 
-#### Por qué las dos mediciones difieren tanto
+#### Dónde caen: el dato que cambia la lectura
 
-El mínimo pasa de 0,164 a 0,0723 y el umbral de 0,1 pasa de dejar 0 píxeles a
-dejar 62. Son dos efectos que actúan en el mismo sentido y que esta medición no
-separa:
+Desde la Semana 5 el AOI incluye alteración cartografiada, así que la pregunta
+que antes no se podía formular ahora se puede contar:
 
-1. **Hay ~61 veces más muestras.** El mínimo de una muestra es un estadístico
-   de orden extremo: crece hacia el centro de la distribución cuando hay pocas
-   observaciones, simplemente porque la cola inferior no está poblada. 65.536
-   píxeles no alcanzan para que aparezcan los 62 casos que en 3.999.908 caen
-   bajo 0,1 —son 16 por cada millón—, y en una submuestra de ese tamaño lo
-   esperable es encontrar cero aunque existan.
-2. **El AOI completo es más heterogéneo.** La ventana chica son 5,12 × 5,12 km
-   de suelo desnudo homogéneo; los 40 × 40 km del AOI incluyen la red de
-   drenaje, el piedemonte, el pueblo y los campos regados. Que la mediana
-   también se corra (0,250 → 0,2742) y que el máximo casi se duplique (0,453 →
-   0,6971) es la señal de que no es solo tamaño muestral: son superficies que
-   la ventana no contenía.
+| clase de la verdad de terreno | píxeles del AOI | detecciones a 0,1 rad |
+|---|---|---|
+| positivo (alteración cartografiada) | 50.773 (1,27 %) | **0** |
+| negativo (no candidata) | 192.444 (4,81 %) | **0** |
+| ambiguo (sin clasificar) | 3.756.783 (93,92 %) | **131** |
 
-**Lo que se concluiría mal generalizando la ventana chica al AOI completo** es
-que ningún umbral razonable separa nada y que la vía del SAM está agotada: con
-0,15 rad quedan 4.513 píxeles, que es una población con la que sí se puede
-trabajar. Y al revés, calibrar el umbral contra la ventana de 256×256 px
-significaría ajustarlo sobre un recorte que no contiene la cola inferior que se
-quiere detectar. Toda cifra de ángulo de este proyecto tiene que decir sobre
-qué ventana se midió; sin ese dato no es comparable con ninguna otra.
+**130 de las 131 caen sobre una sola unidad**: `Depositos antropicos, botaderos
+de mina`, los botaderos de la mina Cerro Colorado, 16,79 km² y 1,05 % del AOI.
+La restante cae sobre una facies conglomerádica de la Formación Altos de Pica.
+
+Eso explica de un golpe las tres cifras de arriba: los parches conexos, la
+reflectancia media más alta que el fondo (0,278 contra 0,207) y la razón
+B12/B11 uniformemente menor que 1 son lo que se espera de roca molida y recién
+expuesta, sin la costra ni el barniz del desierto. El SAM está encontrando algo
+real y espacialmente coherente —130 aciertos dentro del 1 % del área—, pero es
+material removido, no geología *in situ*.
+
+**Dentro de las unidades declaradas positivo el ángulo mínimo es 0,1541 rad**,
+muy por encima del umbral: ni un solo píxel de alteración cartografiada se
+parece a la caolinita a esta escala. Es el resultado que hay que poder explicar,
+y la explicación más plausible es que la superficie natural del desierto está
+cubierta por costra y barniz que enmascaran la firma, mientras que el material
+de mina la expone.
 
 #### La conclusión no cambia
 
-`configs/tamarugal_kaolinite.yaml` fija `angle_threshold_rad: 0.1`. **Ese valor
-sigue sin criterio de calibración**, y no se cambia en este trabajo a propósito:
-hay que reemplazarlo por un criterio, no por otro número elegido a ojo. Que
-ahora deje 62 píxeles en vez de 0 no lo valida —solo muestra que el 0 anterior
-era un artefacto del tamaño de la ventana—.
+`configs/cerro_colorado_kaolinite.yaml` fija `angle_threshold_rad: 0.1`. **Ese
+valor sigue sin criterio de calibración**, y no se cambia en este trabajo a
+propósito: hay que reemplazarlo por un criterio, no por otro número elegido a
+ojo. Calibrarlo exige la curva ROC, que es trabajo de `validation/metrics.py`.
 
-**62 píxeles de 3.999.908 no son una detección de caolinita.** El ángulo
+**131 píxeles de 3.993.936 no son una detección de caolinita.** El ángulo
 espectral mide parecido contra una firma de laboratorio, no presencia de un
 mineral: cualquier superficie que en 9 bandas se le parezca cae igual de bajo.
-Mientras `validation/` siga sin verdad de terreno (etapa 9 del
-[pipeline](pipeline.md)) no hay con qué estimar cuántos de esos píxeles son el
-mineral. La figura del notebook muestra el mecanismo sobre la ventana chica: la
-referencia cae en picada de B11 a B12 por la absorción Al–OH y ninguno de los
-dos píxeles graficados la acompaña.
-
-Sobre la ventana de 256×256 px, las dos distribuciones —9 y 12 bandas— son
-prácticamente la misma, que es lo esperado y no un argumento a favor de
-ninguna. Quitar B1, B8 y B9 no cambia el resultado sobre desierto despejado
-porque ahí las tres aportan poca varianza útil. La razón para preferir 9 sigue
-siendo la de la sección 2, no el rendimiento; lo que este número aporta es que
-el recorte **no cuesta nada**, que es lo que había que comprobar antes de
-fijarlo.
+Ahora, además, se sabe *dónde* caen, y el lugar no es el que E3 pide.
 
 ## 8. El detector SAM
 
@@ -748,7 +731,7 @@ compatibles con alteración argílica, y eso es un juicio geológico, no un dato
 del mapa.
 
 Por eso la selección no está en el código: vive en
-`configs/verdad_terreno_tamarugal.yaml`, versionada, con una línea de
+`configs/verdad_terreno_cerro_colorado.yaml`, versionada, con una línea de
 justificación por unidad y con la lista completa de las 38 unidades presentes
 en el AOI y su superficie. Es lo primero que alguien va a cuestionar en una
 defensa, y tiene que poder cuestionarlo leyendo un YAML, no leyendo Python.
@@ -820,3 +803,101 @@ Dos detalles relacionados, ambos testeados:
   caso ocurre. Se elige el positivo porque es la clase rara: borrarla con un
   negativo la haría desaparecer sin dejar rastro, mientras que lo contrario solo
   agrega un área positiva que se ve en la figura.
+
+
+## 10. El cambio de AOI de la Semana 5
+
+Tres decisiones que hay que poder defender.
+
+### 10.1 Por qué se movió el AOI: E3 no se podía cumplir
+
+La Semana 4 dejó implementada la capa de verdad de terreno y, al construirla,
+apareció el problema: **dentro del AOI de la Pampa del Tamarugal no había ni una
+sola unidad con alteración hidrotermal cartografiada**. El 96 % del AOI era
+relleno sedimentario —depósitos aluviales, salinos, eólicos y de piedemonte— y
+las tres unidades candidatas de la hoja Mamiña caían todas fuera:
+
+| Unidad | Distancia al borde E del AOI viejo |
+|---|---|
+| Brechas hidrotermales de turmalina (Cpx. Yabricoya) | 29,5 km |
+| Complejo intrusivo Cerro Colorado | 10,3 km |
+| Complejo Yabricoya (todas sus facies) | 19,1 km |
+
+Con cero zonas de alteración documentadas, el criterio **E3** del Plan
+Maestro —«las detecciones se concentran preferentemente en zonas de alteración
+argílica/hidrotermal documentadas»— no se podía ni formular, y **E4** (recall,
+F1, ROC/AUC) tampoco. No es que el resultado fuera malo: la pregunta no tenía
+sentido sobre ese recorte.
+
+La respuesta fue mover la ventana, no reformular el criterio. La ventana pasa de
+`col_off=1000, row_off=1000` a `col_off=2700, row_off=650`. **No crece**: siguen
+siendo 2000 × 2000 px a 20 m, o sea 40 × 40 km, y el `.npz` pesa lo mismo.
+
+`row_off` baja de 1000 a 650 porque **Cerro Colorado está al noreste, no solo al
+este**: su borde sur (N 7.782.431) quedaba 2,4 km por encima del borde norte del
+AOI viejo, así que ampliar solo hacia el este lo habría dejado afuera. Con la
+ventana nueva las tres unidades entran —Yabricoya se corta en su borde este, a
+5,9 km— y la cartografía sigue cubriendo el AOI al 100 %.
+
+Qué cambió en las cifras:
+
+| | AOI Tamarugal | AOI Cerro Colorado |
+|---|---|---|
+| Ventana | `col_off=1000, row_off=1000` | `col_off=2700, row_off=650` |
+| Píxeles válidos | 99,9977 % (92 descartados) | 99,8484 % (6.064 descartados) |
+| Ángulo mín / mediana / máx | 0,0723 / 0,2742 / 0,6971 | 0,0662 / 0,2795 / 0,6859 |
+| Detecciones a 0,1 rad | 62 | 131 |
+| Positivo en la verdad de terreno | 0 px | 50.773 px (1,27 %) |
+
+La caída de píxeles válidos es sombra topográfica: la ventana entra en la
+Precordillera y tiene relieve. 0,15 % sigue siendo despreciable.
+
+### 10.2 Qué se declaró positivo, y con qué criterio
+
+`configs/verdad_terreno_cerro_colorado.yaml` declara **8 unidades como
+positivo** (20,30 km², 1,27 % del AOI): las brechas hidrotermales de turmalina,
+las dos facies del Complejo intrusivo Cerro Colorado y los pórfidos félsicos
+—dacíticos, riodacíticos y riolíticos—, incluidos los del Complejo Yabricoya.
+El criterio es alteración hidrotermal declarada en la carta, o litología
+porfídica félsica del distrito.
+
+**Diez unidades son negativo** (76,94 km², 4,81 %): eólicos activos, aluviales
+activos, coluviales, deslizamientos y cobertura agrícola. Todo lo demás queda
+ambiguo (93,92 %) y se excluye del cálculo de métricas.
+
+La decisión discutible, y hay que decirla antes de que la pregunten: **las
+facies plutónicas del Complejo Yabricoya no son positivo** pese a pertenecer al
+complejo. Son 81,65 km², cuatro veces el positivo entero. Son monzogranitos y
+sienogranitos, o sea roca de caja del batolito, no el sistema porfídico
+mineralizado; incluirlas multiplicaría el positivo por cinco sin ninguna
+alteración declarada y lo diluiría hasta volverlo inútil como referencia.
+
+### 10.3 Cómo se clasificó la mina, y por qué eso decide E3
+
+Dentro del AOI está la mina Cerro Colorado en operación. La carta la recoge como
+`Depositos antropicos, botaderos de mina`: **16,79 km², el 1,05 % del AOI**.
+
+Se clasificó como **ambiguo, de forma explícita y no por omisión**. Las dos
+lecturas son reales y se anulan:
+
+- A favor de positivo: el estéril de un pórfido *es* roca alterada, molida y
+  expuesta. Espectralmente puede ser el sitio con más arcilla visible del AOI.
+- A favor de negativo: un botadero no es una zona de alteración cartografiada
+  sino una obra humana, y su ubicación no es la de la roca original.
+- Y hay circularidad: la mina está ahí **porque** hay alteración. Declararla
+  positivo casi garantiza el acierto en el punto más llamativo del mapa e
+  inflaría el resultado sin sustento geológico.
+
+**Esa decisión determina por completo la respuesta a E3**, y el dato lo
+confirma: de las 131 detecciones a 0,1 rad, **130 caen exactamente sobre los
+botaderos**. Con los botaderos declarados positivo, el 99,2 % de las detecciones
+caería en positivo y E3 se cumpliría de forma espectacular. Con la clasificación
+adoptada, **cero detecciones caen en positivo y E3 no se cumple**.
+
+La honestidad exige decir las dos cosas y dejar la decisión donde se pueda
+revisar. Lo que no cambia con ninguna clasificación es el hecho crudo: dentro de
+las unidades de alteración cartografiada el ángulo mínimo es 0,1541 rad, muy por
+encima del umbral. **Ninguna zona de alteración *in situ* del AOI se parece a la
+caolinita a 20 m de resolución.** La explicación más plausible es que la costra
+y el barniz del desierto enmascaran la firma en la superficie natural, mientras
+que el material removido de la mina la expone.

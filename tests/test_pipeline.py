@@ -38,13 +38,15 @@ from mineralmap.pipeline import (  # noqa: E402
 from mineralmap.spectral.endmembers import get_reference_spectrum  # noqa: E402
 
 # La ventana del AOI del proyecto, tal como la declara
-# configs/tamarugal_kaolinite.yaml.
-WINDOW_PX = {"col_off": 1000, "row_off": 1000, "width": 2000, "height": 2000}
-BBOX_TAMARUGAL = [-69.7673, -20.4377, -69.383, -20.075]
+# configs/cerro_colorado_kaolinite.yaml.
+WINDOW_PX = {"col_off": 2700, "row_off": 650, "width": 2000, "height": 2000}
+BBOX_CERRO_COLORADO = [-69.4412, -20.3748, -69.0577, -20.0128]
 
 # Ventana por defecto de `build_scene_from_safe`, que es contra la que se
-# compara el cache cuando el config no declara AOI.
-VENTANA_DEFAULT = [1000, 1000, 2000, 2000]
+# compara el cache cuando el config no declara AOI. Tiene que seguir a
+# WINDOW_PX: si divergen, entrar por el config y entrar sin el dan dos zonas
+# de estudio distintas y ninguna de las dos falla.
+VENTANA_DEFAULT = [2700, 650, 2000, 2000]
 
 
 def test_el_registro_resuelve_sam_desde_el_nombre_del_config():
@@ -75,7 +77,7 @@ def test_window_px_se_convierte_en_una_window_de_rasterio():
     ventana = _resolver_aoi({"window_px": WINDOW_PX})
 
     assert isinstance(ventana, Window)
-    assert (ventana.col_off, ventana.row_off) == (1000, 1000)
+    assert (ventana.col_off, ventana.row_off) == (2700, 650)
     assert (ventana.width, ventana.height) == (2000, 2000)
 
 
@@ -86,16 +88,16 @@ def test_window_px_le_gana_al_bbox_cuando_estan_los_dos():
     bbox, el recorte se correria unos pixeles respecto de la ventana que
     define el AOI, y nada lo denunciaria.
     """
-    resuelto = _resolver_aoi({"window_px": WINDOW_PX, "bbox": BBOX_TAMARUGAL})
+    resuelto = _resolver_aoi({"window_px": WINDOW_PX, "bbox": BBOX_CERRO_COLORADO})
 
     assert isinstance(resuelto, Window)
 
 
 def test_sin_window_px_se_usa_el_bbox():
     """Es el camino de configs/default.yaml, que no declara ventana."""
-    resuelto = _resolver_aoi({"bbox": BBOX_TAMARUGAL})
+    resuelto = _resolver_aoi({"bbox": BBOX_CERRO_COLORADO})
 
-    assert resuelto == tuple(BBOX_TAMARUGAL)
+    assert resuelto == tuple(BBOX_CERRO_COLORADO)
 
 
 def test_sin_aoi_no_se_resuelve_nada_y_decide_el_constructor():
@@ -372,7 +374,7 @@ def test_con_el_aoi_dado_como_bbox_no_se_usa_el_cache():
     asi que no se cachea en vez de adivinar."""
     scene = _scene_sintetico(["B2", "B3"], aoi_window=WINDOW_PX.values())
 
-    sirve, motivo = _cache_coincide(scene, tuple(BBOX_TAMARUGAL), ["B2", "B3"])
+    sirve, motivo = _cache_coincide(scene, tuple(BBOX_CERRO_COLORADO), ["B2", "B3"])
 
     assert not sirve
     assert "bbox" in motivo

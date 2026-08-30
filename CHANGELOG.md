@@ -235,7 +235,9 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   versionan mediante una excepción explícita en `.gitignore`, con el mismo
   criterio que las firmas `.txt`: son livianos, no se regeneran desde ningún dato
   local y son la evidencia reproducible de contra qué se validó.
-- `configs/verdad_terreno_tamarugal.yaml`: el mapeo unidad → clase, revisable
+- `configs/verdad_terreno_tamarugal.yaml` (renombrado a
+  `verdad_terreno_cerro_colorado.yaml` en la Semana 5): el mapeo unidad → clase,
+  revisable
   sin leer código. Llega con las listas **vacías** a propósito —la selección es
   un juicio geológico y la hace una persona— y con la lista completa de las 38
   unidades presentes en el AOI, su superficie y una propuesta comentada por
@@ -258,6 +260,95 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   mensaje útil. Dos tests con `skipif` verifican, cuando los GeoJSON reales están
   en disco, que la unión de ambas hojas contenga el bbox del AOI y que no haya
   hueco en la costura.
+
+#### Semana 5: el AOI se movió al distrito Cerro Colorado
+
+- **Se reubicó la ventana del AOI** de `col_off=1000, row_off=1000` a
+  `col_off=2700, row_off=650`, sobre el mismo tile `T19KDT` y la misma escena.
+  Sigue midiendo 2000 × 2000 px a 20 m (40 × 40 km): la ventana se desplaza al
+  noreste, no crece.
+
+  **El motivo es que el criterio E3 del Plan Maestro no se podía cumplir.** Al
+  construir la capa de verdad de terreno en la Semana 4 se descubrió que dentro
+  del AOI de la Pampa del Tamarugal no había **ni una sola unidad con alteración
+  hidrotermal cartografiada**: el 96 % era relleno sedimentario, y las tres
+  unidades candidatas de la hoja Mamiña caían fuera —las brechas hidrotermales a
+  29,5 km del borde este, el Complejo intrusivo Cerro Colorado a 10,3 km y el
+  Complejo Yabricoya a 19,1 km—. Con cero zonas documentadas, «las detecciones
+  se concentran preferentemente en zonas de alteración documentadas» no se podía
+  ni formular, y E4 (recall, F1, ROC/AUC) tampoco.
+
+  `row_off` baja de 1000 a 650 porque Cerro Colorado está al **noreste**: su
+  borde sur quedaba 2,4 km por encima del borde norte del AOI anterior, así que
+  ampliar solo hacia el este lo habría dejado afuera.
+
+  Qué cambió en las cifras publicadas:
+
+  | | AOI Tamarugal | AOI Cerro Colorado |
+  |---|---|---|
+  | Píxeles válidos | 99,9977 % (92 descartados) | 99,8484 % (6.064 descartados) |
+  | Suelo desnudo (SCL 5) | 99,92 % | 99,8085 % |
+  | Ángulo mín / p1 / mediana / máx | 0,0723 / 0,2055 / 0,2742 / 0,6971 | 0,0662 / 0,2004 / 0,2795 / 0,6859 |
+  | Detecciones a 0,1 rad | 62 | 131 |
+  | Positivo en la verdad de terreno | 0 px | 50.773 px (1,27 %) |
+  | Exceso sobre el ruido a 0,1 rad | 143 × | 3 × |
+
+  La caída de píxeles válidos es sombra topográfica (0,1505 % del AOI): la
+  ventana entra en la Precordillera y tiene relieve. El exceso sobre el ruido
+  baja porque este AOI tiene mucha más variedad litológica y su distribución de
+  ángulos es más ancha, no porque el detector empeorara.
+
+- **Configs renombrados con `git mv`** para conservar el historial:
+  `tamarugal_kaolinite.yaml` → `cerro_colorado_kaolinite.yaml` y
+  `verdad_terreno_tamarugal.yaml` → `verdad_terreno_cerro_colorado.yaml`. El
+  archivo del experimento ya se había llamado `chuqui_kaolinite.yaml`; dejarlo
+  como «tamarugal» apuntando a Cerro Colorado repetiría el error que aquel
+  rename vino a corregir. `DEFAULT_AOI_WINDOW` en `scene_builder.py` se movió
+  con él: si divergen, entrar por el config y entrar sin él dan dos zonas de
+  estudio distintas y ninguna de las dos falla.
+
+- **El YAML de verdad de terreno se llenó**, con propuesta marcada unidad por
+  unidad. 8 unidades positivo (20,30 km², 1,27 % del AOI): brechas hidrotermales
+  de turmalina, ambas facies del Complejo intrusivo Cerro Colorado y los
+  pórfidos félsicos. 10 unidades negativo (76,94 km², 4,81 %). El resto,
+  ambiguo (93,92 %). Las facies plutónicas del Complejo Yabricoya (81,65 km²)
+  **no** son positivo pese a pertenecer al complejo: son roca de caja, no el
+  sistema porfídico, e incluirlas multiplicaría el positivo por cinco sin
+  alteración declarada.
+
+- **Los botaderos de la mina Cerro Colorado (16,79 km², 1,05 % del AOI) se
+  clasificaron como ambiguo de forma explícita**, no por omisión, porque las dos
+  lecturas defendibles se anulan y porque la mina está donde está *porque* hay
+  alteración —declararla positivo casi garantizaría el acierto—. La decisión
+  resultó determinante: **de las 131 detecciones a 0,1 rad, 130 caen exactamente
+  sobre esos botaderos**. Con ellos declarados positivo, el 99,2 % de las
+  detecciones caería en positivo y E3 se cumpliría; con la clasificación
+  adoptada, **cero detecciones caen en positivo y E3 no se cumple**. Dentro de
+  las unidades de alteración cartografiada el ángulo mínimo es 0,1541 rad, muy
+  por encima del umbral.
+
+- **Todas las cifras publicadas se rehicieron** en `README.md` (ambos idiomas),
+  `docs/{es,en}/pipeline.md` y `docs/{es,en}/decisiones_tecnicas.md`, y
+  `scripts/verificar_cifras.py` vuelve a pasar limpio sobre las 36 que coteja.
+  Se agregó la sección 10 a los dos documentos de decisiones técnicas con las
+  tres cosas que hay que poder defender. Las cifras del AOI anterior **no** se
+  conservan como referencia en los documentos: se cuentan una sola vez, aquí y
+  en esa sección 10.
+
+- **Todas las figuras se regeneraron** sobre la ventana nueva: `scene_rgb.png`,
+  `mascara_scl.png`, `kaolinite_sam_angle.png`, `kaolinite_signature.png`,
+  `kaolinite_signature_vs_pixel.png`, `overlay_deteccion_geologia.png` y las de
+  `outputs/scratch/`. La ventana de exploración del notebook se movió a
+  `col_off=2700, row_off=650` para que siga compartiendo esquina con la
+  autoritativa.
+
+- **Tests actualizados a la ventana nueva**: `tests/test_pipeline.py`
+  (`WINDOW_PX`, el bbox y `VENTANA_DEFAULT`) y `tests/test_geology.py`
+  (`AOI_BBOX` y los dos tests atados al AOI anterior). Se agregó
+  `test_las_unidades_de_alteracion_caen_dentro_del_aoi`, que ancla la razón de
+  ser de la ventana: sin esas unidades adentro no hay positivo posible y E3
+  vuelve a ser informulable.
+
 
 ### Changed
 

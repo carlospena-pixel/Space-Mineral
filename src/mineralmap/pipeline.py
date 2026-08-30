@@ -57,7 +57,7 @@ THRESHOLD_SWEEP: tuple[float, ...] = (0.05, 0.08, 0.10, 0.15, 0.20)
 DEFAULT_SCENE_CACHE = "data/interim/scene.npz"
 
 # Nombres de salida cuando el config no los declara. El experimento concreto
-# los sobreescribe (ver configs/tamarugal_kaolinite.yaml); estos existen para
+# los sobreescribe (ver configs/cerro_colorado_kaolinite.yaml); estos existen para
 # que un config minimo produzca archivos con un nombre honesto en vez de
 # fallar por una clave ausente.
 DEFAULT_MAPS_DIR = "outputs/maps/"

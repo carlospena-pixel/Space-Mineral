@@ -129,7 +129,7 @@ Por qué existe el offset y qué pasa si se aplica la fórmula antigua:
 archivo (enteros).
 
 El AOI se puede pedir de tres formas: `None` usa `DEFAULT_AOI_WINDOW`
-(`col_off=1000, row_off=1000, 2000×2000` px a 20 m, o sea 40 × 40 km); una
+(`col_off=2700, row_off=650, 2000×2000` px a 20 m, o sea 40 × 40 km); una
 `Window` se usa tal cual; un bbox WGS84 se reproyecta con `transform_bounds` y
 se redondea a píxeles enteros. Si el AOI pedido no toca el tile es un
 `ValueError`; si lo toca parcialmente se recorta con una advertencia.
@@ -263,7 +263,7 @@ Ese alineamiento está verificado en tres niveles
 ## El flujo implementado: de `Config` a mapa
 
 ```
-configs/tamarugal_kaolinite.yaml
+configs/cerro_colorado_kaolinite.yaml
    |
    |-- load_config(path) ................... Config (scene, aoi, mineral, algorithm, output)
    |
@@ -395,7 +395,7 @@ Desde la raíz del repositorio, con el entorno del
 | `python scripts/visualizar_rgb.py` | Compuesto en color verdadero (B4/B3/B2) con realce por percentiles | `outputs/figures/scene_rgb.png` |
 | `python scripts/visualizar_mascara.py` | Relee SCL sobre la ventana del `Scene` y la dibuja junto a `Scene.mask` | `outputs/figures/mascara_scl.png` |
 | `python scripts/plot_kaolinite_signature.py` | Firma de referencia de la caolinita, banda a banda | `outputs/figures/kaolinite_signature.png` |
-| `python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml` | Etapas 7, 8 y 10 de extremo a extremo: resuelve el `Scene`, corre el detector e imprime el resumen | `outputs/maps/kaolinite_sam_angle.tif` y `outputs/figures/kaolinite_sam_angle.png` |
+| `python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml` | Etapas 7, 8 y 10 de extremo a extremo: resuelve el `Scene`, corre el detector e imprime el resumen | `outputs/maps/kaolinite_sam_angle.tif` y `outputs/figures/kaolinite_sam_angle.png` |
 | `python scripts/verificar_cifras.py` | Recalcula desde el `.tif` las cifras que el README y la sección 7 publican, las compara contra lo que dicen esos archivos y sale con código 1 si alguna no calza | Nada: solo lee e imprime |
 
 `visualizar_rgb.py` y `visualizar_mascara.py` cargan `data/interim/scene.npz`
@@ -440,7 +440,7 @@ La capa tiene **tres** valores: `1` positivo, `0` negativo y `255` ambiguo
 clase está en [decisiones_tecnicas.md](decisiones_tecnicas.md), sección 9.
 
 Qué unidad cuenta como positivo **no está en el código**: se declara en
-`configs/verdad_terreno_tamarugal.yaml`, porque es un juicio geológico y no un
+`configs/verdad_terreno_cerro_colorado.yaml`, porque es un juicio geológico y no un
 dato del mapa. Con ese YAML sin llenar el pipeline corre igual y produce una
 capa 100 % ambigua, que es el estado en que está hoy.
 

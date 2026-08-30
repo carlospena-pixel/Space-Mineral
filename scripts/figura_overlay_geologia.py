@@ -2,7 +2,7 @@
 
 Lee el mapa de angulos que ya escribio el pipeline en `outputs/maps/` --- no lo
 recalcula --- y le superpone los poligonos geologicos clasificados segun
-`configs/verdad_terreno_tamarugal.yaml`. Guarda
+`configs/verdad_terreno_cerro_colorado.yaml`. Guarda
 `outputs/figures/overlay_deteccion_geologia.png`.
 
 El dibujo vive en `visualization/maps.py::plot_overlay_geologia`; este archivo
@@ -36,7 +36,7 @@ from mineralmap.validation.geology import (  # noqa: E402
 from mineralmap.visualization.maps import plot_overlay_geologia  # noqa: E402
 
 RUTA_SCENE = "data/interim/scene.npz"
-RUTA_CONFIG = "configs/verdad_terreno_tamarugal.yaml"
+RUTA_CONFIG = "configs/verdad_terreno_cerro_colorado.yaml"
 RUTA_ANGULOS = "outputs/maps/kaolinite_sam_angle.tif"
 RUTA_SALIDA = "outputs/figures/overlay_deteccion_geologia.png"
 
@@ -67,8 +67,7 @@ def _cargar_poligonos(config_path: str, crs):
 
     config = cargar_config_verdad(config_path)
     capas = [
-        load_geology_polygons(ruta).to_crs(crs)
-        for ruta in config["_archivos"].values()
+        load_geology_polygons(ruta).to_crs(crs) for ruta in config["_archivos"].values()
     ]
     combinados = gpd.GeoDataFrame(
         pd.concat(capas, ignore_index=True), geometry="geometry", crs=crs
@@ -89,9 +88,7 @@ def main() -> None:
 
     poligonos = _cargar_poligonos(args.config, scene.crs)
 
-    ax = plot_overlay_geologia(
-        angulos, scene, poligonos, threshold=args.threshold
-    )
+    ax = plot_overlay_geologia(angulos, scene, poligonos, threshold=args.threshold)
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     ax.figure.savefig(args.out, dpi=150, bbox_inches="tight")

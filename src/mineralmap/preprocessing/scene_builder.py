@@ -37,7 +37,12 @@ from mineralmap.preprocessing.resampling import read_band_on_grid, resampling_fo
 # AOI por defecto: ventana en la grilla de 20 m del tile. 2000x2000 px a 20 m
 # son 40x40 km. Es la definicion autoritativa de la zona de estudio; el bbox en
 # WGS84 de los configs es su equivalente informativo.
-DEFAULT_AOI_WINDOW = Window(col_off=1000, row_off=1000, width=2000, height=2000)
+#
+# Tiene que seguir a `configs/cerro_colorado_kaolinite.yaml`: un Scene
+# construido sin config usa esta ventana, asi que si las dos divergen el
+# proyecto produce dos zonas de estudio distintas segun por donde se entre, y
+# ninguna de las dos falla.
+DEFAULT_AOI_WINDOW = Window(col_off=2700, row_off=650, width=2000, height=2000)
 
 # Grilla objetivo del proyecto. 20 m es la resolucion de las bandas SWIR
 # (B11/B12), que son las que llevan la firma de la caolinita: subir a 10 m no
