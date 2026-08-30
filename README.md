@@ -169,6 +169,55 @@ del umbral. Cómo se clasifican los botaderos decide por completo la respuesta
 a E3, y por eso está declarado y argumentado en
 `configs/verdad_terreno_cerro_colorado.yaml` en vez de resolverse por omisión.
 
+### Validación: qué se puede medir sin verdad de terreno
+
+La biblioteca de métricas (`validation/metrics.py`) está implementada y
+verificada: matriz de confusión, precisión, recall, F1, IoU, kappa, curva ROC y
+AUC, enriquecimiento espacial y acuerdo entre máscaras. Los valores esperados de
+los tests salen de una matriz de confusión escrita a mano y calculada en papel,
+y se contrastan además contra `scikit-learn` como oráculo independiente.
+
+El barrido de umbral y el contraste con líneas base se corren así:
+
+```bash
+python scripts/sweep_threshold.py --config configs/tamarugal_kaolinite.yaml
+```
+
+**Los tres criterios de validación, y cuál se puede cerrar hoy:**
+
+| Criterio | Qué pregunta | Estado |
+|---|---|---|
+| E3 — enriquecimiento espacial | ¿Las detecciones caen en zonas de alteración documentadas? | **BLOQUEADO POR TRACK A** |
+| E4 — métricas contra verdad | ¿Cuántas detecciones son correctas? | **BLOQUEADO POR TRACK A** |
+| E5 — contraste con líneas base | ¿La detección coincide con una segunda opinión más que el azar? | Medible |
+
+**E3 y E4 están bloqueados y no por falta de código.** Las funciones existen y
+están probadas con datos sintéticos; lo que no existe es la capa de verdad de
+terreno. `data/external/` solo contiene la firma USGS de caolinita y
+`validation/geology.py` sigue siendo dos `NotImplementedError` (Track A). Y hay
+un problema anterior a ese: el AOI es `T19KDT`, Pampa del Tamarugal, y la Carta
+Calama 1:50.000 que el plan original fijaba como verdad de terreno **no cubre
+ese cuadrante**. Implementar `geology.py` no lo resuelve solo.
+
+`sweep_threshold.py` corre igual sin verdad de terreno: calcula lo que no la
+necesita y declara por nombre qué quedó sin medir. Las columnas de E4 del CSV
+quedan **vacías, no en cero**, porque un cero se leería como una medición.
+
+**E5 sí se puede medir, y las cifras están pendientes de correr.** El contraste
+compara tres máscaras a la misma tasa de positivos —SAM bajo el umbral del
+config, el clay ratio B11/B12 por percentil, y una aleatoria de semilla fija— y
+la única afirmación defendible que produce es *«SAM coincide con el clay ratio
+más / igual / menos que el azar»*. **Eso no dice que SAM detecte caolinita**: el
+clay ratio no es verdad de terreno, es una segunda opinión sobre las mismas dos
+bandas de la misma imagen, y los dos criterios pueden equivocarse juntos. Las
+cifras concretas se publican aquí cuando el barrido corra sobre el mapa
+regenerado; no se rellenan a mano mientras tanto.
+
+Una limitación que vale para todo lo anterior y que no se arregla con código:
+los píxeles vecinos no son independientes. El **tamaño de muestra efectivo es
+mucho menor que los 3.999.908 píxeles válidos**, así que un F1 o un AUC por
+píxel exagera la significancia (`docs/es/decisiones_tecnicas.md`, sección 11).
+
 ---
 
 <a id="en"></a>
@@ -321,6 +370,56 @@ minimum angle is 0.1541 rad, well above the threshold. How the waste dumps get
 classified decides the answer to E3 outright, which is why it is declared and
 argued in `configs/verdad_terreno_cerro_colorado.yaml` rather than settled by
 omission.
+
+#### Validation: what can be measured without ground truth
+
+The metrics library (`validation/metrics.py`) is implemented and verified:
+confusion matrix, precision, recall, F1, IoU, kappa, ROC curve and AUC, spatial
+enrichment and agreement between masks. The expected values in the tests come
+from a confusion matrix written out by hand and computed on paper, and are
+additionally checked against `scikit-learn` as an independent oracle.
+
+The threshold sweep and the baseline contrast are run with:
+
+```bash
+python scripts/sweep_threshold.py --config configs/tamarugal_kaolinite.yaml
+```
+
+**The three validation criteria, and which one can be closed today:**
+
+| Criterion | What it asks | Status |
+|---|---|---|
+| E3 — spatial enrichment | Do detections fall inside documented alteration zones? | **BLOCKED BY TRACK A** |
+| E4 — metrics against ground truth | How many detections are correct? | **BLOCKED BY TRACK A** |
+| E5 — contrast against baselines | Does the detection agree with a second opinion more than chance? | Measurable |
+
+**E3 and E4 are blocked, and not for lack of code.** The functions exist and are
+tested against synthetic data; what does not exist is the ground-truth layer.
+`data/external/` only holds the USGS kaolinite signature and
+`validation/geology.py` is still two `NotImplementedError` (Track A). And there
+is a problem upstream of that: the AOI is `T19KDT`, Pampa del Tamarugal, and the
+Carta Calama 1:50,000 that the original plan named as ground truth **does not
+cover that quadrant**. Implementing `geology.py` does not resolve that on its
+own.
+
+`sweep_threshold.py` runs anyway without ground truth: it computes what does not
+need it and names explicitly what was left unmeasured. The E4 columns of the CSV
+are left **empty, not zero**, because a zero would read as a measurement.
+
+**E5 can be measured, and the figures are pending a run.** The contrast compares
+three masks at the same positive rate — SAM under the config threshold, the
+B11/B12 clay ratio by percentile, and a random one with a fixed seed — and the
+only defensible claim it produces is *"SAM agrees with the clay ratio more / the
+same as / less than chance"*. **That does not say SAM detects kaolinite**: the
+clay ratio is not ground truth, it is a second opinion over the same two bands of
+the same image, and the two criteria can be wrong together. The concrete figures
+are published here once the sweep runs over the regenerated map; they are not
+filled in by hand in the meantime.
+
+One limitation that applies to all of the above and cannot be fixed in code:
+neighbouring pixels are not independent. The **effective sample size is much
+smaller than the 3,999,908 valid pixels**, so a per-pixel F1 or AUC overstates
+significance (`docs/en/technical_decisions.md`, section 11).
 
 ## License
 

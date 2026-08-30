@@ -901,3 +901,158 @@ encima del umbral. **Ninguna zona de alteración *in situ* del AOI se parece a l
 caolinita a 20 m de resolución.** La explicación más plausible es que la costra
 y el barniz del desierto enmascaran la firma en la superficie natural, mientras
 que el material removido de la mina la expone.
+---
+
+## 11. Validación y métricas
+
+Semana 4, Track B. La biblioteca de métricas vive en
+`src/mineralmap/validation/metrics.py`, el índice espectral en
+`src/mineralmap/spectral/indices.py`, y la tabla del hito la produce
+`scripts/sweep_threshold.py`.
+
+### Qué mide cada criterio, y cuál se puede medir hoy
+
+| Criterio | Qué pregunta | Estado |
+|---|---|---|
+| E3 — enriquecimiento espacial | ¿Las detecciones caen preferentemente en zonas de alteración documentadas? | **BLOQUEADO POR TRACK A** |
+| E4 — métricas contra verdad | ¿Cuántas detecciones son correctas? (precisión, recall, F1, IoU, kappa, AUC) | **BLOQUEADO POR TRACK A** |
+| E5 — contraste con líneas base | ¿La detección coincide con una segunda opinión más que el azar? | Medible hoy |
+
+E3 y E4 están **implementados y probados con datos sintéticos dentro de
+`tests/`**, y no se pueden calcular sobre la escena real porque no existe la
+capa de verdad de terreno: `data/external/` solo contiene la firma USGS de
+caolinita y `validation/geology.py` sigue siendo dos `NotImplementedError`.
+Rasterizar la cartografía del SERNAGEOMIN es Track A. Hasta que esa capa exista,
+`sweep_threshold.py` corre igual, calcula todo lo que no la necesita y **declara
+por nombre** qué quedó sin medir; las columnas correspondientes del CSV quedan
+vacías y no en `0`, porque un `0` en la columna F1 se lee como «el detector no
+acertó nada», que es una medición, cuando lo que pasa es que no hubo con qué
+medir.
+
+Hay además un riesgo de alcance que no es de código y que conviene dejar
+escrito: el AOI del experimento es `T19KDT`, Pampa del Tamarugal, y la Carta
+Calama 1:50.000 que el plan original fijaba como verdad de terreno **no cubre
+ese cuadrante**. Sin una capa que lo cubra, E3 y E4 no se cierran sobre esta
+escena por más que `geology.py` se implemente.
+
+### La dirección del puntaje, del lado de las métricas
+
+La sección 8 registra cómo se resolvió la deuda en el contrato del detector:
+cada `Detector` declara `higher_is_better` y quien binariza usa `detects()`. Las
+métricas necesitan **el mismo dato, otra vez**, y no lo pueden heredar de ahí:
+`metrics.py` no conoce el proyecto —recibe arreglos de numpy pelados, sin
+`Scene` ni detector— y esa es justamente la propiedad que permite testearlo sin
+la escena y reusarlo con el Random Forest del Nivel 2.
+
+Por eso `roc_curve` y `roc_auc` reciben `higher_is_better`, con el **mismo
+nombre** que el atributo de `Detector`. El default es `True`, la convención
+estándar de la literatura y de sklearn.
+
+**Qué pasa si se omite con un ángulo.** Nada visible: no lanza, no advierte, y
+devuelve `1 - AUC`. Un detector que separa con **AUC 0,82 se reporta como 0,18**
+—un número perfectamente plausible, en el rango correcto y exactamente al
+revés—. Es el error más caro posible en esta etapa, porque un AUC bajo se
+interpretaría como «el detector no sirve» y llevaría a cambiar el algoritmo en
+vez de un argumento. El parámetro **no** tiene un default que adivine: mirando
+un arreglo de flotantes no hay forma de saber si son ángulos o probabilidades,
+así que quien pasa un ángulo tiene que escribirlo. `tests/test_metrics.py`
+incluye `test_clasificador_que_invierte_todo_da_auc_cero`, que es el test que
+atrapa exactamente esta inversión.
+
+Los umbrales que devuelve `roc_curve` salen **en la escala del puntaje que
+entró**, no en la interna negada: con ángulos salen ángulos, para que se puedan
+pasar tal cual a `detects()`. La regla de detección asociada cambia con la
+dirección (`>=` con `True`, `<=` con `False`), y es la misma que aplica el
+detector.
+
+### El clay ratio se umbraliza por percentil, no por un valor absoluto
+
+`clay_ratio(cube, band_names)` devuelve B11/B12. En la caolinita, B12 (~2186 nm
+en S2B) cae por la absorción Al–OH del doblete 2160/2200 nm y B11 (~1610 nm) es
+el hombro de referencia, así que **el ratio sube donde hay arcilla**: la
+dirección contraria a la del ángulo SAM. Al cruzar los dos mapas hay que
+umbralizar cada uno en su propio sentido; hacerlo en el mismo sentido no lanza
+nada y produce dos máscaras casi complementarias, con un IoU cercano a cero que
+se lee como «los dos criterios no coinciden» cuando en realidad uno se calculó
+al revés.
+
+El corte **no** es un número absoluto porque no existe un «B11/B12 > 1,35»
+canónico: el cociente depende de la corrección atmosférica, del albedo local y
+del rango espectral del sensor, así que inventar un valor sería elegir la tasa
+de positivos sin decirlo. La máscara se deriva por **tasa de positivos**, y esa
+tasa se iguala a la de la máscara con la que se va a comparar.
+
+La razón es aritmética, no estética. **El IoU entre dos máscaras de tamaños muy
+distintos está acotado por el cociente de sus tamaños**: si una marca 62 píxeles
+y la otra 400.000, el IoU no puede pasar de 62/400.000 ≈ 0,000155 aunque los 62
+estén todos dentro de los 400.000. En ese régimen el número mide la diferencia
+de tamaño y no el acuerdo espacial, y se leería como desacuerdo. Igualar la tasa
+es lo que devuelve el IoU a hablar de *dónde* caen los píxeles.
+
+Por lo mismo, `mask_by_positive_rate` toma exactamente *k* píxeles con
+`argpartition` en vez de cortar por el valor del percentil: con un corte por
+valor, un grupo de empates justo sobre el umbral entra entero o no entra, y la
+tasa realizada deja de ser la pedida.
+
+### E5 sin verdad de terreno: qué se puede afirmar y qué no
+
+El contraste se monta con **tres máscaras a la misma tasa de positivos**: la de
+SAM bajo el umbral del config, la del clay ratio por percentil, y una aleatoria
+de semilla fija declarada en la salida.
+
+La línea base aleatoria no es decorativa: es la que le da escala al número. Un
+IoU de 0,02 entre SAM y el clay ratio no significa nada por sí solo; significa
+algo comparado con lo que saca el azar a la misma tasa.
+
+La única afirmación defendible sin verdad de terreno es **«SAM coincide con el
+clay ratio más / igual / menos que el azar»**, y el script la escribe con esas
+palabras. No dice que SAM detecte caolinita: el clay ratio no es verdad de
+terreno, es una segunda opinión derivada de las mismas dos bandas de la misma
+imagen, y los dos criterios pueden equivocarse juntos.
+
+### Los píxeles no son independientes: la significancia está exagerada
+
+Es la limitación honesta del método y va escrita porque **no se arregla con
+código**.
+
+Todas las métricas de este módulo se calculan por píxel y tratan cada píxel como
+una observación independiente. No lo son: la reflectancia está espacialmente
+autocorrelacionada —los píxeles vecinos ven el mismo material, la misma
+iluminación y la misma unidad geomorfológica—, y a 20 m de resolución un rasgo
+del terreno ocupa decenas de píxeles contiguos.
+
+La consecuencia práctica: **el tamaño de muestra efectivo es mucho menor que los
+3.999.908 píxeles válidos del AOI**, en un factor que esta medición no estima. Un
+F1 o un AUC calculado sobre 4 millones de píxeles parece descansar sobre 4
+millones de observaciones y no es así, así que cualquier intervalo de confianza o
+prueba de significancia derivado de ese *n* **exagera la certeza**. Las cifras
+sirven para comparar configuraciones sobre la misma escena —que es para lo que se
+usan aquí— y no para afirmar que una diferencia pequeña entre dos umbrales sea
+estadísticamente significativa.
+
+Corregirlo de verdad exigiría validación por bloques espaciales o un *n* efectivo
+estimado desde el variograma, y ninguna de las dos cosas está hecha.
+
+### Qué devuelve cada métrica cuando no está definida
+
+`NaN`, no `0,0`. Una métrica que nadie puede calcular tiene que decirlo:
+devolver `0,0` la haría indistinguible de una métrica calculada que dio 0, que es
+un resultado completamente distinto. Con cero detecciones —el régimen real de
+este proyecto— la precisión es `NaN`, porque no hay ninguna detección cuya
+calidad medir; devolver `0,0` afirmaría que todas las detecciones fueron falsas
+alarmas, que es una medición concreta y falsa.
+
+La excepción son **F1 e IoU**, que se calculan por conteos y por eso están
+definidos donde la precisión no lo está. Con cero detecciones sobre una verdad
+que sí tiene positivos, `2·TP / (2·TP + FP + FN)` da `0 / (0 + 0 + FN) = 0`, que
+es la respuesta correcta y útil: el detector no encontró nada de lo que había que
+encontrar. La fórmula `2·P·R / (P + R)` habría propagado el `NaN` de la
+precisión.
+
+Y sobre kappa, que es el que más engaña a esta prevalencia: con 0,002 % de
+positivos, el acuerdo esperado por azar `pe` es prácticamente 1 —casi todo el
+acuerdo entre dos máscaras cualesquiera es acuerdo sobre píxeles negativos, y el
+azar ya lo consigue solo—, así que el denominador `1 - pe` se vuelve minúsculo y
+kappa amplifica muchísimo unos pocos píxeles. Es una métrica de acuerdo, no de
+detección, y a esta prevalencia su valor absoluto no es comparable con el de otro
+problema con otra tasa de positivos.
