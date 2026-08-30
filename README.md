@@ -20,6 +20,13 @@ estadística formal, interfaz para geólogo) sin refactorizar. Ver
 conda env create -f environment.yml
 conda activate mineralmap
 
+# Alternativa con venv: el entorno local está construido con Python 3.13.
+# Para reconstruirlo desde cero (borrar .venv y volver a instalar):
+#   py -3.13 -m venv .venv
+#   .venv\Scripts\python.exe -m pip install -e ".[dev]"
+# No uses `python -m venv`: toma la primera versión del PATH, que puede no ser
+# la 3.13 y deja site-packages incoherente con el intérprete.
+
 # Paquete instalable en modo editable
 pip install -e ".[dev]"
 pre-commit install
@@ -183,6 +190,13 @@ statistical validation, geologist-facing interface) without refactoring. See
 ```bash
 conda env create -f environment.yml
 conda activate mineralmap
+
+# venv alternative: the local environment is built with Python 3.13. To rebuild
+# it from scratch, delete .venv and run:
+#   py -3.13 -m venv .venv
+#   .venv\Scripts\python.exe -m pip install -e ".[dev]"
+# Do not use `python -m venv`: it picks the first version on PATH, which may not
+# be 3.13 and leaves site-packages inconsistent with the interpreter.
 
 pip install -e ".[dev]"
 pre-commit install
