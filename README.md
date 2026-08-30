@@ -216,7 +216,7 @@ regenerado; no se rellenan a mano mientras tanto.
 Una limitación que vale para todo lo anterior y que no se arregla con código:
 los píxeles vecinos no son independientes. El **tamaño de muestra efectivo es
 mucho menor que los 3.999.908 píxeles válidos**, así que un F1 o un AUC por
-píxel exagera la significancia (`docs/es/decisiones_tecnicas.md`, sección 9).
+píxel exagera la significancia (`docs/es/decisiones_tecnicas.md`, sección 11).
 
 ---
 
@@ -419,7 +419,7 @@ filled in by hand in the meantime.
 One limitation that applies to all of the above and cannot be fixed in code:
 neighbouring pixels are not independent. The **effective sample size is much
 smaller than the 3,999,908 valid pixels**, so a per-pixel F1 or AUC overstates
-significance (`docs/en/technical_decisions.md`, section 9).
+significance (`docs/en/technical_decisions.md`, section 11).
 
 ## License
 
