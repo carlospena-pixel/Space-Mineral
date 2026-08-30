@@ -118,7 +118,7 @@ def mask_by_positive_rate(
     index_map: np.ndarray,
     positive_rate: float,
     valid: np.ndarray | None = None,
-    greater_is_better: bool = True,
+    higher_is_better: bool = True,
 ) -> np.ndarray:
     """Marca la fraccion `positive_rate` de pixeles con mejor puntaje del mapa.
 
@@ -148,7 +148,7 @@ def mask_by_positive_rate(
         Mascara booleana opcional de pixeles evaluables, misma forma. Los
         pixeles invalidos no se marcan y tampoco cuentan para el total sobre el
         que se calcula la fraccion.
-    greater_is_better:
+    higher_is_better:
         True (default) marca los valores mas **altos**, que es lo que
         corresponde al clay ratio. False marca los mas bajos, que es lo que
         corresponderia a un mapa de angulo espectral. Es el mismo parametro
@@ -207,7 +207,7 @@ def mask_by_positive_rate(
         return plana.reshape(index_map.shape)
 
     valores = index_map.ravel()[indices_validos]
-    orientados = valores if greater_is_better else -valores
+    orientados = valores if higher_is_better else -valores
 
     # `argpartition` en vez de ordenar el mapa entero: sobre 4 millones de
     # pixeles es O(n) contra O(n log n), y aca solo interesa cuales son los k

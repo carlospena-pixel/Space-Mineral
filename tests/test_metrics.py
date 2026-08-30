@@ -134,14 +134,14 @@ def test_clasificador_que_invierte_todo_da_auc_cero():
     que es exactamente lo que no debe hacer: con el angulo de SAM devolveria un
     numero plausible y al reves sin que nada lo denuncie.
 
-    Declarar la direccion con `greater_is_better=False` es lo que lo endereza,
+    Declarar la direccion con `higher_is_better=False` es lo que lo endereza,
     y ahi si vale 1.
     """
     verdad = np.array([0, 0, 1, 1], dtype=bool)
     puntaje_al_reves = np.array([0.9, 0.8, 0.2, 0.1])
 
     assert roc_auc(verdad, puntaje_al_reves) == pytest.approx(0.0, abs=ATOL_EXACTO)
-    assert roc_auc(verdad, puntaje_al_reves, greater_is_better=False) == pytest.approx(
+    assert roc_auc(verdad, puntaje_al_reves, higher_is_better=False) == pytest.approx(
         1.0, abs=ATOL_EXACTO
     )
 
@@ -158,7 +158,7 @@ def test_auc_invertido_es_uno_menos_el_directo():
     puntaje = rng.random(2000) + verdad * 0.4
 
     directo = roc_auc(verdad, puntaje)
-    declarado = roc_auc(verdad, puntaje, greater_is_better=False)
+    declarado = roc_auc(verdad, puntaje, higher_is_better=False)
 
     assert directo == pytest.approx(1.0 - declarado, abs=ATOL_EXACTO)
     # El caso construido separa de verdad: si no, el reflejo se cumpliria
@@ -342,7 +342,7 @@ def test_la_curva_empieza_en_el_origen_y_la_fpr_es_creciente():
 
 
 def test_los_umbrales_vuelven_en_la_escala_del_puntaje_y_reproducen_la_curva():
-    """Con `greater_is_better=False` los umbrales salen como angulos, no negados,
+    """Con `higher_is_better=False` los umbrales salen como angulos, no negados,
     y aplicarlos con `<=` reconstruye exactamente la TPR y la FPR de la curva.
 
     Es el test que cierra el contrato de direccion de punta a punta: no basta
@@ -354,7 +354,7 @@ def test_los_umbrales_vuelven_en_la_escala_del_puntaje_y_reproducen_la_curva():
     # Angulos: menores donde la verdad es positiva, como haria SAM.
     angulo = rng.random(300) * 0.5 + np.where(verdad, 0.0, 0.2)
 
-    fpr, tpr, umbrales = roc_curve(verdad, angulo, greater_is_better=False)
+    fpr, tpr, umbrales = roc_curve(verdad, angulo, higher_is_better=False)
 
     assert np.all(umbrales[1:] >= 0.0)
     assert umbrales[0] == -np.inf
@@ -579,7 +579,7 @@ def test_oraculo_sklearn_sobre_un_caso_aleatorio():
 
 
 def test_oraculo_sklearn_de_la_direccion_declarada():
-    """`greater_is_better=False` equivale a pasarle el puntaje negado a sklearn.
+    """`higher_is_better=False` equivale a pasarle el puntaje negado a sklearn.
 
     Fija que "declarar la direccion" es exactamente negar antes de rankear, y no
     alguna otra operacion que casualmente de bien en los casos faciles.
@@ -588,7 +588,7 @@ def test_oraculo_sklearn_de_la_direccion_declarada():
     verdad = rng.random(3000) > 0.75
     angulo = rng.random(3000) - verdad * 0.3
 
-    assert roc_auc(verdad, angulo, greater_is_better=False) == pytest.approx(
+    assert roc_auc(verdad, angulo, higher_is_better=False) == pytest.approx(
         sk.roc_auc_score(verdad, -angulo), abs=ATOL_ORACULO
     )
 

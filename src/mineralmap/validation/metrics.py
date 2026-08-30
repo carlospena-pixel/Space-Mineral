@@ -396,7 +396,7 @@ def roc_curve(
     y_true: np.ndarray,
     y_score: np.ndarray,
     valid: np.ndarray | None = None,
-    greater_is_better: bool = True,
+    higher_is_better: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Curva ROC completa: FPR, TPR y los umbrales donde la curva cambia.
 
@@ -405,7 +405,7 @@ def roc_curve(
     no es una curva ROC: es un muestreo de cinco puntos de ella, y el area bajo
     esos cinco puntos depende de donde se pusieron.
 
-    Sobre `greater_is_better`, que es la razon de ser de este parametro. Ver
+    Sobre `higher_is_better`, que es la razon de ser de este parametro. Ver
     `docs/es/decisiones_tecnicas.md`, seccion 8.
 
     El default `True` es la convencion estandar de la literatura y de sklearn:
@@ -415,7 +415,7 @@ def roc_curve(
     ningun error y no produce ninguna advertencia: devuelve la curva reflejada
     y un AUC invertido, ``1 - AUC``. Un detector que en realidad separa con AUC
     0,82 se reporta como 0,18, que es un numero perfectamente plausible, en el
-    rango correcto, y exactamente al reves. Con `greater_is_better=False` la
+    rango correcto, y exactamente al reves. Con `higher_is_better=False` la
     funcion niega internamente el puntaje antes de rankear, que es la operacion
     que endereza la direccion sin tocar el detector.
 
@@ -424,13 +424,13 @@ def roc_curve(
     angulos o probabilidades. Quien pase un angulo tiene que escribirlo.
 
     Los umbrales se devuelven **en la escala original del puntaje**, tambien
-    cuando `greater_is_better=False`: con angulos salen angulos, no sus
+    cuando `higher_is_better=False`: con angulos salen angulos, no sus
     negativos. La regla de deteccion asociada cambia con la direccion, y es la
     misma que ya usa `algorithms.sam.threshold`:
 
-    - con `greater_is_better=True`, el punto `i` corresponde a detectar donde
+    - con `higher_is_better=True`, el punto `i` corresponde a detectar donde
       ``y_score >= umbrales[i]``;
-    - con `greater_is_better=False`, a detectar donde ``y_score <= umbrales[i]``.
+    - con `higher_is_better=False`, a detectar donde ``y_score <= umbrales[i]``.
 
     El primer punto de la curva es siempre (0, 0), el umbral que no detecta
     nada, y su umbral asociado es +inf o -inf segun la direccion.
@@ -444,7 +444,7 @@ def roc_curve(
         pixeles correspondientes de `y_true`.
     valid:
         Mascara booleana opcional de pixeles evaluables.
-    greater_is_better:
+    higher_is_better:
         True si un puntaje mayor significa mas evidencia (default, convencion
         estandar). False para puntajes donde menor es mejor, como el angulo
         espectral de SAM.
@@ -486,7 +486,7 @@ def roc_curve(
     # Rankear siempre "mayor primero" y enderezar la direccion negando. Negar
     # es exacto en punto flotante (solo cambia el bit de signo), asi que no
     # introduce ningun empate ni desempate que no estuviera ya en el puntaje.
-    orientado = puntaje if greater_is_better else -puntaje
+    orientado = puntaje if higher_is_better else -puntaje
 
     # `mergesort` es estable: dos pixeles con el mismo puntaje conservan su
     # orden relativo, y por lo tanto la curva sale igual en dos corridas.
@@ -512,7 +512,7 @@ def roc_curve(
     # interna: un barrido que imprima "-0,15" donde el usuario piensa en
     # angulos es inutilizable. El +inf del primer punto pasa a -inf, que con la
     # regla `<=` es igualmente el umbral que no detecta nada.
-    if not greater_is_better:
+    if not higher_is_better:
         umbrales = -umbrales
 
     return fpr, tpr, umbrales
@@ -522,7 +522,7 @@ def roc_auc(
     y_true: np.ndarray,
     y_score: np.ndarray,
     valid: np.ndarray | None = None,
-    greater_is_better: bool = True,
+    higher_is_better: bool = True,
 ) -> float:
     """Area bajo la curva ROC, por regla del trapecio.
 
@@ -534,7 +534,7 @@ def roc_auc(
 
     Es la metrica que mas se presta a ese error silencioso, porque un AUC
     invertido sigue siendo un numero en [0, 1] con aspecto de resultado. Con el
-    angulo espectral de SAM hay que pasar ``greater_is_better=False``.
+    angulo espectral de SAM hay que pasar ``higher_is_better=False``.
 
     Que dice el AUC que el F1 no: el F1 evalua **una** mascara binaria, o sea
     un umbral ya elegido, y cambia si se cambia el umbral. El AUC resume el
@@ -551,7 +551,7 @@ def roc_auc(
         Puntaje continuo del detector. Sus NaN se descartan.
     valid:
         Mascara booleana opcional de pixeles evaluables.
-    greater_is_better:
+    higher_is_better:
         True si un puntaje mayor significa mas evidencia (default). False para
         el angulo espectral de SAM.
 
@@ -562,7 +562,7 @@ def roc_auc(
         tiene negativos, caso en que la curva ROC no esta definida.
     """
     fpr, tpr, _ = roc_curve(
-        y_true, y_score, valid=valid, greater_is_better=greater_is_better
+        y_true, y_score, valid=valid, higher_is_better=higher_is_better
     )
 
     if fpr.size == 1 and not np.isfinite(fpr[0]):

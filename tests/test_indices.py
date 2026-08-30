@@ -191,7 +191,7 @@ def test_marca_los_valores_mas_bajos_cuando_menor_es_mejor():
     """
     mapa = np.arange(100, dtype=np.float64).reshape(10, 10)
 
-    mascara = mask_by_positive_rate(mapa, 0.10, greater_is_better=False)
+    mascara = mask_by_positive_rate(mapa, 0.10, higher_is_better=False)
 
     assert np.array_equal(np.flatnonzero(mascara.ravel()), np.arange(0, 10))
 

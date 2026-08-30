@@ -38,8 +38,10 @@ from typing import Any
 import numpy as np
 import rasterio
 
+from mineralmap.algorithms.base import Detector
 from mineralmap.config import Config, load_config
 from mineralmap.io.raster_io import load_scene
+from mineralmap.pipeline import DETECTORS
 from mineralmap.spectral.indices import clay_ratio, mask_by_positive_rate
 from mineralmap.validation.metrics import (
     agreement,
@@ -150,31 +152,42 @@ def _leer_mapa(ruta: str, forma_esperada: tuple[int, int]) -> np.ndarray:
     return mapa
 
 
-def _umbrales_del_barrido(mapa: np.ndarray) -> tuple[np.ndarray, float]:
-    """Umbrales del minimo del mapa a su mediana, con `PASOS_DEL_BARRIDO` puntos.
+def _umbrales_del_barrido(
+    mapa: np.ndarray, higher_is_better: bool
+) -> tuple[np.ndarray, float]:
+    """Umbrales del extremo mas selectivo del mapa hasta su mediana.
 
     El rango sale del propio mapa y no de cinco numeros fijos porque el umbral
-    util depende de la escena: un barrido que empieza por debajo del minimo
+    util depende de la escena: un barrido que empieza mas alla del extremo
     reporta ceros y uno que termina antes de la mediana no muestra donde
-    empieza a detectar masivamente. La mediana es el techo natural: por encima
-    de ella se estaria marcando mas de la mitad del AOI, que ya no es una
+    empieza a detectar masivamente. La mediana es el techo natural: pasada
+    ella se estaria marcando mas de la mitad del AOI, que ya no es una
     deteccion de nada.
+
+    De que extremo se parte lo decide la direccion declarada por el detector.
+    Con un puntaje donde menor es mejor --el angulo de SAM-- el barrido va del
+    minimo hacia la mediana; con uno donde mayor es mejor, del maximo hacia la
+    mediana. Fijar el minimo para los dos casos daria, en un detector de
+    probabilidad, un barrido que arranca marcando el AOI entero y termina
+    marcando la mitad: una tabla monotona sin nada que elegir.
 
     Parameters
     ----------
     mapa:
-        Mapa de angulos con NaN en lo invalido.
+        Mapa de puntaje con NaN en lo invalido.
+    higher_is_better:
+        Direccion del puntaje, tal como la declara `Detector.higher_is_better`.
 
     Returns
     -------
     tuple[np.ndarray, float]
-        (umbrales, paso efectivo en radianes).
+        (umbrales, paso efectivo en las unidades del puntaje, siempre positivo).
     """
-    minimo = float(np.nanmin(mapa))
+    extremo = float(np.nanmax(mapa) if higher_is_better else np.nanmin(mapa))
     mediana = float(np.nanmedian(mapa))
 
-    umbrales = np.linspace(minimo, mediana, PASOS_DEL_BARRIDO)
-    paso = (mediana - minimo) / (PASOS_DEL_BARRIDO - 1)
+    umbrales = np.linspace(extremo, mediana, PASOS_DEL_BARRIDO)
+    paso = abs(mediana - extremo) / (PASOS_DEL_BARRIDO - 1)
     return umbrales, paso
 
 
@@ -183,6 +196,7 @@ def _fila_del_barrido(
     mapa: np.ndarray,
     validos: np.ndarray,
     verdad: np.ndarray | None,
+    detector: Detector,
 ) -> dict[str, Any]:
     """Metricas de un umbral. Las de E4 quedan vacias si no hay verdad.
 
@@ -190,7 +204,11 @@ def _fila_del_barrido(
     como None: un 0 en la columna F1 se lee como "el detector no acerto nada",
     que es una medicion, cuando lo que pasa es que no hubo con que medir.
     """
-    detectado = (mapa <= umbral) & validos
+    # `detects()` y no un `<=` a mano: el detector es el que sabe en que
+    # direccion apunta su puntaje. Comparar a mano es exactamente el bug que ese
+    # metodo existe para evitar --un detector con higher_is_better=True daria
+    # cero detecciones bajo todos los umbrales sin lanzar nada--.
+    detectado = detector.detects(mapa, umbral) & validos
     n_detectado = int(np.count_nonzero(detectado))
     n_validos = int(np.count_nonzero(validos))
 
@@ -283,7 +301,7 @@ def _contrastar_con_lineas_base(
     que significa algo es si el azar, a la misma tasa, saca 0,0001 o saca 0,02.
     """
     mascara_clay = mask_by_positive_rate(
-        mapa_clay, tasa, valid=validos, greater_is_better=True
+        mapa_clay, tasa, valid=validos, higher_is_better=True
     )
 
     # La linea base se arma con la misma funcion que la del clay ratio, sobre un
@@ -337,6 +355,7 @@ def _evaluar_contra_verdad(
     mascara_sam: np.ndarray,
     validos: np.ndarray,
     verdad: np.ndarray,
+    detector: Detector,
 ) -> None:
     """E3 y E4 sobre la escena: solo se llama si llego una capa de verdad."""
     print("\nE4 - Metricas contra verdad de terreno (umbral del config)")
@@ -347,10 +366,17 @@ def _evaluar_contra_verdad(
     print(f"  IoU       : {iou_score(verdad, mascara_sam, valid=validos):.6f}")
     print(f"  kappa     : {cohen_kappa(verdad, mascara_sam, valid=validos):.6f}")
 
-    # `greater_is_better=False` no es opcional: el mapa son angulos, donde menor
-    # es mas parecido. Omitirlo devuelve 1 - AUC sin lanzar nada.
-    auc = roc_auc(verdad, mapa, valid=validos, greater_is_better=False)
-    print(f"  AUC       : {auc:.6f}  (angulo declarado: greater_is_better=False)")
+    # La direccion no se supone: se la pide al detector. `metrics.roc_auc` no
+    # conoce el proyecto y su default es la convencion estandar (mayor es mas
+    # evidencia); con el angulo de SAM, omitirla devuelve 1 - AUC sin lanzar
+    # nada, o sea 0,18 donde deberia decir 0,82.
+    auc = roc_auc(
+        verdad, mapa, valid=validos, higher_is_better=detector.higher_is_better
+    )
+    print(
+        f"  AUC       : {auc:.6f}  "
+        f"(direccion declarada: higher_is_better={detector.higher_is_better})"
+    )
 
     print("\nE3 - Enriquecimiento espacial")
     razon = spatial_enrichment(mascara_sam, verdad, valid=validos)
@@ -402,6 +428,18 @@ def main() -> None:
                 f"    python scripts/run_pipeline.py --config {args.config}"
             )
 
+    # El detector sale del registro del pipeline y no se instancia SAM a mano:
+    # es el mismo mecanismo que usa `run_pipeline`, asi que el barrido mide el
+    # mismo algoritmo que produjo el mapa. Solo se lee `DETECTORS`; este script
+    # no modifica nada de `pipeline.py`.
+    nombre_algoritmo = str(config.algorithm.get("name", ""))
+    if nombre_algoritmo not in DETECTORS:
+        _abortar(
+            f"El algoritmo '{nombre_algoritmo}' del config no esta registrado; "
+            f"los disponibles son {sorted(DETECTORS)}."
+        )
+    detector = DETECTORS[nombre_algoritmo]()
+
     scene = load_scene(ruta_scene)
     mapa = _leer_mapa(ruta_mapa, tuple(scene.cube.shape[1:]))
 
@@ -420,7 +458,7 @@ def main() -> None:
     umbral_config = float(
         config.algorithm.get("params", {}).get("angle_threshold_rad", float("nan"))
     )
-    mascara_sam = (mapa <= umbral_config) & validos
+    mascara_sam = detector.detects(mapa, umbral_config) & validos
     n_sam = int(np.count_nonzero(mascara_sam))
 
     print("=" * 72)
@@ -438,8 +476,8 @@ def main() -> None:
     )
     print("=" * 72)
 
-    umbrales, paso = _umbrales_del_barrido(mapa)
-    filas = [_fila_del_barrido(u, mapa, validos, verdad) for u in umbrales]
+    umbrales, paso = _umbrales_del_barrido(mapa, detector.higher_is_better)
+    filas = [_fila_del_barrido(u, mapa, validos, verdad, detector) for u in umbrales]
     _imprimir_barrido(filas, paso, con_verdad=verdad is not None)
 
     ruta_csv = os.path.join(args.out_dir, "sweep_threshold.csv")
@@ -464,7 +502,7 @@ def main() -> None:
         _contrastar_con_lineas_base(mascara_sam, mapa_clay, validos, n_sam / n_validos)
 
     if verdad is not None:
-        _evaluar_contra_verdad(mapa, mascara_sam, validos, verdad)
+        _evaluar_contra_verdad(mapa, mascara_sam, validos, verdad, detector)
     else:
         print(
             "\nE3 y E4 - SIN CALCULAR, BLOQUEADO POR TRACK A.\n"
