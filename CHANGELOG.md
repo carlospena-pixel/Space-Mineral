@@ -212,6 +212,47 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   cuente solo los píxeles válidos y que un mapa de forma distinta a la del
   `Scene` sea un error.
 
+#### Semana 4, Track B: la biblioteca de métricas de validación
+
+- Biblioteca de métricas de validación (Semana 4, Track B):
+  `validation/metrics.py` deja de ser cinco `NotImplementedError` y pasa a
+  implementar `confusion_matrix`, `precision_recall`, `f1_score`, `iou_score`,
+  `cohen_kappa`, `roc_curve`, `roc_auc`, `spatial_enrichment` (E3) y
+  `agreement` (E5). Todo con numpy: `scikit-learn` está en las dependencias y
+  **no** se importa aquí, para que cada métrica se pueda leer y defender en un
+  code review sin abrir otra librería; sí se usa dentro de los tests como
+  oráculo independiente. El módulo no conoce el proyecto —ni `Scene`, ni
+  rasterio, ni nombres de banda—, que es lo que permite probarlo sin la escena y
+  reusarlo tal cual con el Random Forest del Nivel 2. Revertirlo devolvería el
+  proyecto a no poder medir nada: es la única pieza que convierte el mapa de
+  ángulos en un número comparable.
+- `spectral/indices.py`: `clay_ratio(cube, band_names)`, el cociente B11/B12, y
+  `mask_by_positive_rate`, que convierte un mapa de índice en máscara booleana
+  quedándose con una fracción declarada de píxeles. Las bandas se localizan
+  **por nombre**: el cubo circula con las 12 de `BAND_ORDER` y con las 9 de
+  `SAM_BANDS`, y B11 está en la posición 10 del primero y en la 7 del segundo,
+  así que un índice fijo devuelve un mapa impecable calculado sobre otras dos
+  bandas. `B12 = 0` da `NaN` y no `inf`, porque un `inf` sería el máximo del mapa
+  —o sea la arcilla más fuerte— y sobreviviría a cualquier umbral por percentil.
+- `scripts/sweep_threshold.py`: el barrido fino de umbral y el contraste con
+  líneas base (E5). Barre de un extremo del propio mapa a su mediana, orientado
+  según `Detector.higher_is_better`, y no sobre los cinco números fijos de
+  `pipeline.THRESHOLD_SWEEP`, que cumplen otra función (el resumen de una
+  corrida). Aborta diciendo el comando exacto de `run_pipeline.py` si faltan el
+  `Scene` o el GeoTIFF, y verifica que la forma del `.tif` calce con la del
+  `Scene`: un mapa de otra ventana produce una tabla de métricas impecable sobre
+  el terreno equivocado, con conteos y porcentajes correctos y nada que denuncie
+  el desfase. `--truth` es opcional; sin él el script corre igual y declara
+  **BLOQUEADO POR TRACK A** lo que quedó sin medir, nombrándolo.
+- `tests/test_metrics.py` (33 tests) y `tests/test_indices.py` (19): matriz de
+  confusión escrita a mano con F1, IoU y kappa calculados en papel; clasificador
+  perfecto; **clasificador que invierte todo → AUC = 0**, que es el test que
+  atrapa la dirección del puntaje; puntaje aleatorio con tolerancia declarada y
+  semilla fija; invariancia ante mil píxeles `NaN` añadidos; los casos
+  degenerados de cero detecciones y de verdad sin positivos; enriquecimiento
+  exactamente 1 cuando las detecciones se reparten en proporción al área; y el
+  contraste contra `scikit-learn` como oráculo.
+
 #### Semana 4, Track A: la capa de verdad de terreno
 
 - `validation/geology.py` implementado. `load_geology_polygons()` (lee el
@@ -351,6 +392,50 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 
 ### Changed
+
+#### Semana 4, Track B: la dirección del puntaje también del lado de las métricas
+
+- **El nombre del parámetro de dirección se unificó con el del detector.** Las
+  métricas se escribieron con `greater_is_better` y `Detector` ya declaraba
+  `higher_is_better`: el mismo concepto con dos nombres en dos capas del mismo
+  repositorio. Revertirlo obligaría a recordar cuál de los dos va en cada capa, y
+  equivocarse no da un mensaje que diga que el concepto existe con otro nombre,
+  da un `TypeError` sobre un argumento desconocido. El parámetro sigue siendo
+  necesario en `metrics.py` aunque `Detector` ya lo declare, porque `metrics.py`
+  recibe arreglos de numpy pelados y no tiene de dónde heredarlo.
+- **`sweep_threshold.py` binariza con `detects()` y no con un `<=` propio.** El
+  detector se instancia desde el registro `DETECTORS` según `algorithm.name` —el
+  mismo mecanismo que usa `run_pipeline`, así que el barrido mide el mismo
+  algoritmo que produjo el mapa— y `pipeline.py` solo se lee, no se modifica.
+  Comparar a mano era exactamente el defecto que `detects()` existe para evitar:
+  un detector con `higher_is_better = True` habría dado cero detecciones bajo
+  todos los umbrales del barrido sin lanzar nada. Por lo mismo, el rango del
+  barrido se orienta según la dirección declarada; partir siempre del mínimo
+  daría, en un detector de probabilidad, una tabla monótona que arranca marcando
+  el AOI entero y termina marcando la mitad.
+
+#### Documentación de la validación
+
+- `docs/es/decisiones_tecnicas.md` y `docs/en/technical_decisions.md`: sección 9
+  nueva. Qué mide E3, E4 y E5 y cuál se puede cerrar hoy; el número concreto del
+  AUC invertido (0,82 reportado como 0,18, sin lanzar nada) que justifica que la
+  dirección se declare y no se adivine; por qué el clay ratio se umbraliza por
+  percentil y no por un valor absoluto —el IoU entre dos máscaras de tamaños muy
+  distintos está acotado por el cociente de sus tamaños, así que con 62 píxeles
+  contra 400.000 mide la diferencia de tamaño y no el acuerdo espacial—; y la
+  **advertencia de autocorrelación espacial**: los píxeles vecinos no son
+  independientes, el tamaño de muestra efectivo es mucho menor que 3.999.908 y
+  un F1 o un AUC por píxel exagera la significancia. Esa advertencia no se
+  arregla con código y por eso va escrita.
+- `README.md`: sección de validación en los dos idiomas, con la tabla de estado
+  de E3/E4/E5 y el mismo tono del párrafo que ya existía. **E3 y E4 quedan
+  marcados BLOQUEADO POR TRACK A**, con los dos motivos: no hay capa de verdad de
+  terreno (`data/external/` solo tiene la firma USGS, `validation/geology.py`
+  sigue en `NotImplementedError`) y además el AOI `T19KDT` cae fuera de la Carta
+  Calama que el plan original fijaba como verdad, así que implementar
+  `geology.py` no lo resuelve solo. Las cifras de E5 **no se rellenan a mano**:
+  se publican cuando el barrido corra sobre el mapa regenerado.
+
 
 #### Cierre de la Semana 3: seis defectos de documentación y arquitectura
 
