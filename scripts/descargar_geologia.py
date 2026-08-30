@@ -1,14 +1,18 @@
-"""CLI: descarga la cartografia geologica que cubre el AOI de Tamarugal.
+"""CLI: descarga la cartografia geologica que cubre el AOI del proyecto.
 
-Baja las dos hojas 1:100.000 de SERNAGEOMIN que cubren el AOI --- Pozo Almonte
-(M204) y Mamina (M303) --- desde el FeatureServer `Chile_Geology`, y las deja
-como GeoJSON en EPSG:32719 bajo `data/external/geologia/`.
+Baja las dos hojas 1:100.000 de SERNAGEOMIN de la zona --- Pozo Almonte (M204) y
+Mamina (M303) --- desde el FeatureServer `Chile_Geology`, y las deja como
+GeoJSON en EPSG:32719 bajo `data/external/geologia/`.
 
 Por que dos hojas y no la "Carta Calama" del plan original: Calama esta en la
-Region de Antofagasta, a unos 250 km al sur del AOI. La zona de estudio cambio
-a Pampa del Tamarugal en la Semana 2 y el plan escrito nunca se actualizo. El
-AOI (lon -69,7673 a -69,383) cruza el limite entre Pozo Almonte (70,00-69,50 W)
-y Mamina (69,50-69,00 W), asi que hacen falta las dos y hay que unirlas.
+Region de Antofagasta, a unos 250 km al sur. La zona de estudio cambio a Pampa
+del Tamarugal en la Semana 2 y al distrito Cerro Colorado en la Semana 5, y el
+plan escrito nunca se actualizo.
+
+Se bajan las dos aunque el AOI actual (lon -69,4412 a -69,0577) caiga entero
+dentro de Mamina: el AOI anterior cruzaba el limite entre ambas cartas
+(Pozo Almonte cubre 70,00-69,50 W; Mamina cubre 69,50-69,00 W), la ventana ya
+se movio dos veces y unirlas no cuesta nada.
 
 ADVERTENCIA SOBRE LA FUENTE. `Chile_Geology` es una digitalizacion de terceros
 (publicada por Stanford en ArcGIS Online) de las cartas de SERNAGEOMIN, sin
@@ -58,7 +62,7 @@ CAPAS: dict[str, tuple[int, str]] = {
 DIRECTORIO_SALIDA = "data/external/geologia"
 
 # Campo con el nombre de la unidad litologica. Es el mismo en ambos layers, y
-# es la clave con que `configs/verdad_terreno_tamarugal.yaml` asigna clases.
+# es la clave con que `configs/verdad_terreno_cerro_colorado.yaml` asigna clases.
 CAMPO_UNIDAD = "Unidad_geologica"
 
 
@@ -203,7 +207,7 @@ def resumir_capa(ruta: Path) -> None:
     """Imprime features, CRS, bbox y la tabla de unidades de un GeoJSON.
 
     La tabla de unidades (conteo y area total, de mayor a menor) es el insumo
-    con que se llena `configs/verdad_terreno_tamarugal.yaml`: es la lista
+    con que se llena `configs/verdad_terreno_cerro_colorado.yaml`: es la lista
     exacta de valores que el YAML puede nombrar.
     """
     import geopandas as gpd
@@ -243,25 +247,30 @@ def escribir_readme(directorio: Path) -> None:
     encuentre con los GeoJSON en el repo tiene que poder saber de donde salen y
     que citar sin leer codigo.
     """
-    contenido = f"""# Cartografia geologica del AOI de Tamarugal
+    contenido = f"""# Cartografia geologica del AOI del distrito Cerro Colorado
 
 Poligonos litologicos que cubren el AOI del proyecto (tile T19KDT, EPSG:32719,
-E 419.960-459.960 / N 7.740.040-7.780.040), usados para construir la capa de
-verdad de terreno de la Semana 4.
+E 453.960-493.960 / N 7.747.040-7.787.040), usados para construir la capa de
+verdad de terreno.
 
-- `pozo_almonte.geojson` --- hoja Pozo Almonte, mitad **oeste** del AOI.
-- `mamina.geojson` --- hoja Mamina, mitad **este** del AOI.
+- `mamina.geojson` --- hoja Mamina. Con el AOI actual cubre el AOI **entero**.
+- `pozo_almonte.geojson` --- hoja Pozo Almonte. Queda al oeste del AOI actual
+  y hoy no aporta ningun poligono, pero se conserva: cubria el AOI anterior y
+  la ventana ya se movio dos veces.
 
 Descargados el {date.today().isoformat()} con `scripts/descargar_geologia.py`.
 
 ## Por que dos hojas
 
-El AOI va de lon -69,7673 a -69,383 y **cruza el limite** entre ambas cartas
-(Pozo Almonte cubre 70,00-69,50 W; Mamina cubre 69,50-69,00 W). Ninguna de las
-dos alcanza sola; su union si. La "Carta Calama" del plan original **no
-aplica**: Calama esta en la Region de Antofagasta, a unos 250 km al sur. La
-zona de estudio cambio a Pampa del Tamarugal en la Semana 2 y el plan escrito
-nunca se actualizo.
+El AOI **anterior** (lon -69,7673 a -69,383) cruzaba el limite entre ambas
+cartas (Pozo Almonte cubre 70,00-69,50 W; Mamina cubre 69,50-69,00 W) y
+necesitaba las dos. El AOI **actual** (lon -69,4412 a -69,0577) cae entero
+dentro de Mamina. Se conservan las dos capas de todas formas: el codigo las
+une sin costo y la ventana ya cambio dos veces.
+
+La "Carta Calama" del plan original **no aplica**: Calama esta en la Region de
+Antofagasta, a unos 250 km al sur. La zona de estudio cambio a Pampa del
+Tamarugal en la Semana 2 y al distrito Cerro Colorado en la Semana 5.
 
 ## Fuente tecnica de los vectores
 
@@ -294,7 +303,8 @@ publica poligonos de alteracion hidrotermal para el norte de Chile (verificado:
 no hay WFS ni un servicio de alteracion en su organizacion ArcGIS). Estas
 capas traen **litologia**, no alteracion. Por eso la verdad de terreno del
 proyecto no se obtiene filtrando una columna: es una **seleccion de unidades**
-declarada a mano en `configs/verdad_terreno_tamarugal.yaml`, y ese archivo es
+declarada a mano en `configs/verdad_terreno_cerro_colorado.yaml`, y ese archivo
+es
 donde hay que discutir el criterio.
 """
     (directorio / "README.md").write_text(contenido, encoding="utf-8")

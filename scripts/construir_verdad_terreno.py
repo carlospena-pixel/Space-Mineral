@@ -1,7 +1,7 @@
 """CLI: rasteriza la cartografia geologica a la grilla del Scene.
 
 Carga el Scene desde `data/interim/scene.npz`, construye la capa de verdad de
-terreno segun `configs/verdad_terreno_tamarugal.yaml` y la escribe como
+terreno segun `configs/verdad_terreno_cerro_colorado.yaml` y la escribe como
 GeoTIFF en `outputs/maps/ground_truth.tif`, alineada pixel a pixel con el mapa
 de angulos.
 
@@ -22,7 +22,7 @@ from mineralmap.io.raster_io import load_scene, write_geotiff
 from mineralmap.validation.geology import build_ground_truth
 
 RUTA_SCENE = "data/interim/scene.npz"
-RUTA_CONFIG = "configs/verdad_terreno_tamarugal.yaml"
+RUTA_CONFIG = "configs/verdad_terreno_cerro_colorado.yaml"
 RUTA_SALIDA = "outputs/maps/ground_truth.tif"
 
 # Descripcion de la unica banda del GeoTIFF. Un raster de una banda que no dice

@@ -71,9 +71,7 @@ def _caja_de_pixeles(col0: int, fila0: int, ncols: int, nfilas: int):
 
 def _gdf(geometrias, unidades, crs=CRS_ESCENA):
     """GeoDataFrame de poligonos con su columna de unidad geologica."""
-    return gpd.GeoDataFrame(
-        {CAMPO: list(unidades)}, geometry=list(geometrias), crs=crs
-    )
+    return gpd.GeoDataFrame({CAMPO: list(unidades)}, geometry=list(geometrias), crs=crs)
 
 
 def _mapping(positivo=(), negativo=()):
@@ -425,9 +423,7 @@ def test_build_ground_truth_recorre_el_camino_completo(tmp_path):
     """Del YAML al raster, con dos capas que se concatenan, sin red."""
     capa_a = tmp_path / "a.geojson"
     capa_b = tmp_path / "b.geojson"
-    _gdf([_caja_de_pixeles(0, 0, 3, 3)], ["alterada"]).to_file(
-        capa_a, driver="GeoJSON"
-    )
+    _gdf([_caja_de_pixeles(0, 0, 3, 3)], ["alterada"]).to_file(capa_a, driver="GeoJSON")
     _gdf([_caja_de_pixeles(6, 6, 2, 2)], ["salar"]).to_file(capa_b, driver="GeoJSON")
 
     config = tmp_path / "verdad.yaml"
@@ -463,9 +459,15 @@ RUTAS_REALES = (
     "data/external/geologia/mamina.geojson",
 )
 
-# Bbox del AOI del proyecto en EPSG:32719 (ventana col_off=1000, row_off=1000,
-# 2000x2000 px a 20 m sobre el tile T19KDT).
-AOI_BBOX = (419960.0, 7740040.0, 459960.0, 7780040.0)
+# Bbox del AOI del proyecto en EPSG:32719 (ventana col_off=2700, row_off=650,
+# 2000x2000 px a 20 m sobre el tile T19KDT). Es el AOI del distrito Cerro
+# Colorado, al que se movio la ventana en la Semana 5.
+AOI_BBOX = (453960.0, 7747040.0, 493960.0, 7787040.0)
+
+# Unidades por las que se movio el AOI: son la razon de ser de la ventana
+# nueva. Se nombran por fragmento porque la etiqueta completa trae acentos y
+# variantes de facies.
+UNIDADES_DE_ALTERACION = ("Cerro Colorado", "Brechas hidrotermales")
 
 
 def _faltan_los_geojson() -> bool:
@@ -502,8 +504,13 @@ def test_la_union_de_las_dos_hojas_contiene_el_aoi():
     reason="los GeoJSON reales no estan en disco; corre scripts/descargar_geologia.py",
 )
 def test_las_dos_hojas_se_solapan_y_no_dejan_hueco_en_la_costura():
-    """El AOI cruza el limite entre ambas cartas: si hubiera un hueco entre
-    ellas, quedaria una franja vertical de `ambiguo` que parece un resultado."""
+    """Entre las dos hojas no puede haber un hueco.
+
+    El AOI actual cae entero dentro de Mamina, asi que hoy la costura no lo
+    toca. El test se conserva igual porque la ventana ya se movio dos veces:
+    si vuelve a correrse al oeste y hubiera un hueco entre las hojas, quedaria
+    una franja vertical de `ambiguo` con toda la pinta de ser un resultado.
+    """
     oeste = load_geology_polygons(RUTAS_REALES[0])
     este = load_geology_polygons(RUTAS_REALES[1])
 
@@ -514,3 +521,39 @@ def test_las_dos_hojas_se_solapan_y_no_dejan_hueco_en_la_costura():
         f"hay un hueco entre las hojas: la oeste termina en E "
         f"{borde_este_de_oeste} y la este empieza en E {borde_oeste_de_este}"
     )
+
+
+@pytest.mark.skipif(
+    _faltan_los_geojson(),
+    reason="los GeoJSON reales no estan en disco; corre scripts/descargar_geologia.py",
+)
+def test_las_unidades_de_alteracion_caen_dentro_del_aoi():
+    """El AOI se movio a Cerro Colorado justamente para incluirlas.
+
+    Es el test que ancla la razon de ser de la ventana: sin estas unidades
+    adentro no hay positivo posible en la verdad de terreno, y el criterio E3
+    del Plan Maestro --- "las detecciones se concentran preferentemente en
+    zonas de alteracion documentadas" --- no se puede ni formular. Fue
+    exactamente lo que pasaba con la ventana anterior.
+    """
+    import pandas as pd
+
+    capas = [load_geology_polygons(ruta) for ruta in RUTAS_REALES]
+    union = gpd.GeoDataFrame(
+        pd.concat(capas, ignore_index=True), geometry="geometry", crs=capas[0].crs
+    )
+    aoi_izq, aoi_abajo, aoi_der, aoi_arriba = AOI_BBOX
+
+    for fragmento in UNIDADES_DE_ALTERACION:
+        seleccion = union[union["Unidad_geologica"].str.contains(fragmento, na=False)]
+        assert not seleccion.empty, f"no hay ninguna unidad que contenga {fragmento!r}"
+
+        izq, abajo, der, arriba = seleccion.total_bounds
+        assert izq >= aoi_izq and der <= aoi_der, (
+            f"{fragmento}: E {izq:.0f}-{der:.0f} se sale del AOI "
+            f"E {aoi_izq:.0f}-{aoi_der:.0f}"
+        )
+        assert abajo >= aoi_abajo and arriba <= aoi_arriba, (
+            f"{fragmento}: N {abajo:.0f}-{arriba:.0f} se sale del AOI "
+            f"N {aoi_abajo:.0f}-{aoi_arriba:.0f}"
+        )

@@ -6,8 +6,8 @@ contra algo que no salio del mismo dato que la produjo.
 
 De donde salen los poligonos
 ----------------------------
-De las dos hojas 1:100.000 de SERNAGEOMIN que cubren el AOI de Tamarugal ---
-Pozo Almonte (M204) y Mamina (M303) ---, descargadas con
+De las dos hojas 1:100.000 de SERNAGEOMIN de la zona --- Pozo Almonte (M204)
+y Mamina (M303) ---, descargadas con
 `scripts/descargar_geologia.py` desde el FeatureServer `Chile_Geology`. Ese
 servicio es una **digitalizacion de terceros** sin licencia declarada: se usa
 como insumo tecnico y la cita que corresponde es siempre la carta original. Ver
@@ -19,7 +19,7 @@ SERNAGEOMIN publica un unico tema cartografico ("Geologia Basica") y **no**
 publica poligonos de alteracion hidrotermal para el norte de Chile. Las cartas
 traen litologia, no alteracion, asi que no hay ninguna columna "alteracion" que
 filtrar. El positivo de la verdad de terreno es una **seleccion de unidades
-litologicas** declarada a mano en `configs/verdad_terreno_tamarugal.yaml`. Es
+litologicas** declarada a mano en `configs/verdad_terreno_cerro_colorado.yaml`.
 un juicio geologico explicito, no un dato del mapa original, y por eso vive en
 un YAML versionado y revisable en vez de estar escrito en este archivo.
 
@@ -129,7 +129,7 @@ def cargar_config_verdad(config_path: str) -> dict:
     Parameters
     ----------
     config_path:
-        Ruta del YAML, p. ej. `configs/verdad_terreno_tamarugal.yaml`.
+        Ruta del YAML, p. ej. `configs/verdad_terreno_cerro_colorado.yaml`.
 
     Returns
     -------
@@ -278,7 +278,7 @@ def clasificar_unidades(gdf, mapping: dict):
             f"{len(sin_clasificar)} unidades geologicas quedaron sin clasificar "
             f"y caen en `ambiguo`{detalle}. Las primeras: "
             f"{sin_clasificar[:5]}. Se declaran en "
-            "configs/verdad_terreno_tamarugal.yaml.",
+            "configs/verdad_terreno_cerro_colorado.yaml.",
             stacklevel=2,
         )
 

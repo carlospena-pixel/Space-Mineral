@@ -1,6 +1,6 @@
 # Parametros base compartidos por todos los experimentos.
 # Un experimento concreto hereda/sobreescribe estos valores (ver
-# tamarugal_kaolinite.yaml).
+# cerro_colorado_kaolinite.yaml).
 
 scene:
   path: data/raw/  # ruta a la escena Sentinel-2 L2A (.SAFE)

@@ -1,0 +1,55 @@
+# Experimento concreto: distrito Cerro Colorado (Tarapaca), caolinita con SAM.
+#
+# Zona: borde oriental de la Pampa del Tamarugal / distrito Cerro Colorado,
+# Precordillera de Tarapaca. Mismo tile y misma escena que antes; lo que cambia
+# es la ventana.
+#
+# POR QUE SE MOVIO EL AOI (Semana 5). La ventana anterior --- col_off=1000,
+# row_off=1000, E 419.960-459.960 / N 7.740.040-7.780.040 --- caia integra sobre
+# el relleno sedimentario de la Pampa del Tamarugal: 96 % depositos aluviales,
+# salinos, eolicos y de piedemonte, y CERO unidades con alteracion hidrotermal
+# cartografiada. Con cero zonas de alteracion documentadas en el AOI, el
+# criterio E3 del Plan Maestro --- "las detecciones se concentran
+# preferentemente en zonas de alteracion argilica/hidrotermal documentadas" ---
+# no se podia ni formular, y tampoco recall, F1 ni ROC/AUC (E4).
+#
+# La ventana nueva se desplaza al noreste para incluir el distrito de porfido
+# cuprifero Cerro Colorado. No crece: sigue siendo 2000x2000 px a 20 m.
+# `row_off` baja de 1000 a 650 porque Cerro Colorado esta al NORESTE, no solo
+# al este: su borde sur (N 7.782.431) quedaba 2,4 km por encima del borde norte
+# del AOI viejo, asi que ampliar solo hacia el este lo habria dejado afuera.
+#
+# Unidades de alteracion que entran (verificado contra el FeatureServer):
+#   Complejo intrusivo Cerro Colorado     E 470.241-473.717  entero, margen N 2,4 km
+#   Brechas hidrotermales de turmalina    E 489.495-493.040  entero, margen E 0,92 km
+#   Complejo Yabricoya                    E 479.094-499.816  parcial, se corta en el este
+
+defaults: default.yaml
+
+scene:
+  path: data/raw/S2B_MSIL2A_20251231T144729_N0511_R139_T19KDT_20251231T200248.SAFE
+  tile: T19KDT
+
+aoi:
+  # Autoritativo: ventana en la grilla de 20 m del tile.
+  # Equivale a E 453.960-493.960 / N 7.747.040-7.787.040 en EPSG:32719.
+  window_px: {col_off: 2700, row_off: 650, width: 2000, height: 2000}
+  # Informativo (WGS84), derivado de la ventana anterior con
+  # `rasterio.warp.transform_bounds`, no a mano.
+  bbox: [-69.4412, -20.3748, -69.0577, -20.0128]
+
+mineral:
+  target: kaolinite
+  usgs_sample_id: KGa-1  # Kaolinite CM9, splib07
+
+algorithm:
+  name: sam
+  params:
+    angle_threshold_rad: 0.1
+
+output:
+  dir: data/processed/cerro_colorado_kaolinite/
+  # Nombres de las salidas del experimento. El directorio de cada una lo fija
+  # default.yaml (maps_dir / figures_dir).
+  angle_map: kaolinite_sam_angle.tif
+  heatmap: kaolinite_sam_angle.png

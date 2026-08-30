@@ -1,0 +1,260 @@
+# Verdad de terreno para el AOI del distrito Cerro Colorado (T19KDT).
+#
+# Fuente: cartas SERNAGEOMIN Pozo Almonte (M204) y Mamina (M303), digitalizadas
+# en el FeatureServer Chile_Geology. Se descargan con
+# `python scripts/descargar_geologia.py`. Ver data/external/geologia/README.md.
+#
+# ADVERTENCIA: esta asignacion es un juicio geologico explicito, no un dato del
+# mapa original. Las cartas no cartografian "alteracion" como atributo:
+# SERNAGEOMIN publica un unico tema ("Geologia Basica") y no publica poligonos
+# de alteracion hidrotermal para el norte de Chile. El positivo de esta capa es
+# una seleccion de unidades litologicas hecha por el equipo, y este archivo es
+# donde hay que discutirla.
+#
+# LAS LISTAS SON UNA PROPUESTA, marcada unidad por unidad en la tabla del final
+# con [POS] / [NEG] / [AMB]. Estan para revisarse y corregirse, no para creerse.
+#
+# ---------------------------------------------------------------------------
+# CRITERIO
+# ---------------------------------------------------------------------------
+# POSITIVO  Alteracion hidrotermal declarada, o intrusivos porfidicos felsicos
+#           del distrito (daciticos, riodaciticos, rioliticos).
+#           8 unidades, 20,30 km2 = 1,27 % del AOI.
+# NEGATIVO  Lo que con seguridad no aloja alteracion argilica in situ:
+#           depositos eolicos, aluviales activos, coluviales, deslizamientos y
+#           cobertura agricola. 10 unidades, 76,94 km2 = 4,81 % del AOI.
+# AMBIGUO   Todo lo demas: 27 unidades, 1.502,76 km2 = 93,92 %. Ante la duda,
+#           ambiguo --- un positivo mal declarado envenena las metricas y no
+#           deja rastro.
+#
+# Las dos decisiones que hay que poder defender:
+#   1. Los botaderos de la mina Cerro Colorado (16,79 km2) quedan AMBIGUO, y de
+#      forma explicita, no por omision. El argumento completo esta en su linea
+#      de la tabla del final.
+#   2. Las facies plutonicas del Complejo Yabricoya (81,65 km2) NO son positivo
+#      pese a pertenecer al complejo: son roca de caja, no el sistema
+#      porfidico. Incluirlas multiplicaria el positivo por cinco sin sustento.
+# ---------------------------------------------------------------------------
+
+fuente:
+  pozo_almonte: data/external/geologia/pozo_almonte.geojson
+  mamina: data/external/geologia/mamina.geojson
+  campo_unidad: Unidad_geologica
+
+clases:
+  positivo: 1
+  negativo: 0
+  ambiguo: 255
+
+unidades:
+  positivo:
+    - Brechas hidrotermales de turmalina del Complejo Yabricoya
+    - Complejo intrusivo Cerro Colorado, brechas intrusivas
+    - Complejo intrusivo Cerro Colorado, monzodiorita cuarcifera
+    - Porfidos hipabisales dacíticos del Complejo Yabricoya
+    - Porfidos tonaliticos-granodioriticos La Planada del Complejo Yabricoya
+    - Porfido daciticos del Cretacico Superior
+    - Porfido daciticos y riodaciticos del Cretacico Superior alto-Paleoceno Inferior
+    - Porfidos y domos intrusivos rioliticos del Cretácico Superior
+  negativo:
+    - Depositos aluviales activos
+    - Depositos coluviales del Pleistoceno-Holoceno
+    - Depositos eolicos activos en dunas crecientes
+    - Depositos eolicos activos en dunas longitudinales
+    - Depositos eolicos activos, indiferenciados
+    - Depositos eolicos activos en dunas estelares
+    - Depositos de piedemonte, depositos eolicos medios
+    - Depositos antropicos, suelos de uso agrícola
+    - Depositos de deslizamiento del Pleistoceno-Holoceno
+    - Depositos aluviales antiguos, facies de humedales
+
+# ==========================================================================
+# UNIDADES PRESENTES EN EL AOI, por superficie descendente
+# ==========================================================================
+# 45 unidades; la union de ambas hojas cubre el AOI al 100 % (1.600,0 km2).
+# Todas provienen de la hoja Mamina: con la ventana nueva, Pozo Almonte ya
+# no aporta ningun poligono al AOI.
+#
+# Columnas: km2 | % del AOI | poligonos | unidad, y debajo la clase con su
+# justificacion.
+#
+#    328.91  20.56%   103  Formacion El Diablo, Miembro superior
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#    284.20  17.76%    40  Depositos de piedemonte, gravas superiores
+#     [AMB] Mismo argumento: gravas alimentadas por el drenaje que baja del
+#     distrito.
+#
+#    180.33  11.27%   118  Formacion Cerro Empexa, facies de andesitas
+#     [AMB] Volcanitas cretacicas, litologia hospedante plausible en la
+#     region, sin alteracion declarada aca.
+#
+#    153.12   9.57%    24  Ignimbrita Huasco
+#     [AMB] Ignimbrita; puede tener alteracion vapor-phase no cartografiada.
+#
+#    141.64   8.85%    62  Depositos aluviales antiguos del Pleistoceno-Holoceno
+#     [AMB] Puede acarrear material retrabajado desde Cerro Colorado ladera
+#     abajo; declararlo negativo asumiria algo que la carta no dice.
+#
+#     92.46   5.78%   107  Ignimbrita Tambillo
+#     [AMB] Idem Huasco.
+#
+#     81.65   5.10%     9  Monzogranitos, monzonitas cuarcíferas y sienogranitos de biotita y piroxeno del Complejo Yabricoya
+#     [AMB] Facies PLUTONICA gruesa del Complejo Yabricoya, no el sistema
+#     porfidico. Es la decision mas discutible de la lista: son 81,65 km2
+#     (5,10 %) y meterlos al positivo por pertenecer al Yabricoya
+#     multiplicaria el positivo por cinco sin ninguna alteracion declarada,
+#     diluyendolo hasta volverlo inutil. Roca de caja, no mineralizacion.
+#
+#     50.95   3.18%    21  Formacion El Diablo, Miembro inferior
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#     49.55   3.10%    47  Formacion Altos de Pica, Miembro Imagua, facies conglomeradicas
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#     45.54   2.85%    64  Formacion Altos de Pica, Miembro Sagasca, facies conglomeradicas
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#     28.25   1.77%    34  Depositos aluviales activos
+#     [NEG] Sedimento en transporte actual, sin perfil de meteorizacion.
+#
+#     24.42   1.53%     4  Monzodioritas cuarciferas claras del Cretacico Superior
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#     19.87   1.24%    24  Formacion Cerro Empexa, facies conglomeradicas
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#     19.46   1.22%    27  Depositos de deslizamiento del Pleistoceno-Holoceno
+#     [NEG] Masa deslizada reciente; la roca de origen puede ser cualquiera,
+#     pero la superficie expuesta es escombro.
+#
+#     16.79   1.05%     6  Depositos antropicos, botaderos de mina
+#     [AMB-EXPLICITO] La mina Cerro Colorado. NO cae en ambiguo por omision:
+#     se decide. Las dos lecturas son reales y se anulan --- el esteril de
+#     un porfido ES roca alterada, molida y expuesta (a favor de positivo),
+#     pero un botadero no es una zona de alteracion cartografiada sino una
+#     obra humana, y su ubicacion no es la de la roca original (a favor de
+#     negativo). Ademas hay circularidad: la mina esta ahi PORQUE hay
+#     alteracion, asi que declararlo positivo casi garantiza acierto en el
+#     punto mas llamativo del mapa e inflaria el resultado sin sustento
+#     geologico. Como ambiguo se excluye del calculo y Carlos puede medir
+#     con y sin el. Ocupa 16,79 km2 = 1,05 % del AOI.
+#
+#     11.84   0.74%    61  Depositos coluviales del Pleistoceno-Holoceno
+#     [NEG] Deposito de ladera reciente.
+#
+#     10.42   0.65%    65  Porfidos hipabisales dacíticos del Complejo Yabricoya
+#     [POS] Porfidos daciticos hipabisales: composicion felsica y
+#     emplazamiento somero, la combinacion que hospeda alteracion argilica
+#     en el distrito. Es el positivo mas extenso, 10,42 km2.
+#
+#      8.52   0.53%    22  Granitos, monzonitas cuarcíferas y sienogranitos del Cretácico Superior
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      6.73   0.42%     2  Depositos de piedemonte, depositos eolicos medios
+#     [NEG] Facies eolica del piedemonte.
+#
+#      6.70   0.42%    36  Depositos eolicos activos en dunas crecientes
+#     [NEG] Arena eolica activa.
+#
+#      5.83   0.36%    16  Monzodioritas y monzodioritas cuarciferas grises del Cretacico Superior
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      5.55   0.35%     8  Porfidos tonaliticos-granodioriticos La Planada del Complejo Yabricoya
+#     [POS] Porfidos del Complejo Yabricoya, mismo argumento.
+#
+#      4.31   0.27%     4  Dioritas, dioritas cuarcíferas, y monzodioritas de piroxeno del Complejo Yabricoya
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      4.19   0.26%     7  Monzodioritas cuarciferas de piroxeno del Complejo Yabricoya
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      2.45   0.15%     5  Formacion Munujna
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      2.42   0.15%     8  Monzonitas cuarciferas de piroxeno del Complejo Yabricoya
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      2.36   0.15%    22  Depositos eolicos activos en dunas longitudinales
+#     [NEG] Arena eolica activa.
+#
+#      1.83   0.11%    14  Porfidos y domos intrusivos rioliticos del Cretácico Superior
+#     [POS] Domos rioliticos: los mas felsicos del AOI, favorables a
+#     argilica avanzada.
+#
+#      1.57   0.10%     1  Porfido daciticos del Cretacico Superior
+#     [POS] Porfido dacitico.
+#
+#      1.37   0.09%     6  Formacion Quipisca
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      1.11   0.07%    18  Formacion Altos de Pica, Miembro Sagasca, tobas
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      0.97   0.06%     3  Estratos de Guataguata
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      0.81   0.05%     5  Depositos antropicos, suelos de uso agrícola
+#     [NEG] Cobertura agricola: no es roca, y su firma es vegetacion y suelo
+#     removido.
+#
+#      0.78   0.05%     3  Formacion Juan de Morales
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      0.60   0.04%    13  Formacion Duplijsa
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      0.55   0.03%     3  Complejo intrusivo Cerro Colorado, monzodiorita cuarcifera
+#     [POS] El intrusivo del porfido de Cerro Colorado, mina en operacion.
+#
+#      0.51   0.03%    11  Depositos eolicos activos, indiferenciados
+#     [NEG] Arena eolica activa.
+#
+#      0.30   0.02%     3  Dioritas cuarciferas del Cretácico Superior
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      0.29   0.02%    12  Porfidos andesiticos y microdioriticos del Cretacico Superior
+#     [AMB] Porfidos, pero de composicion intermedia-mafica: menos
+#     favorables a argilica que los daciticos. Ante la duda, ambiguo.
+#
+#      0.24   0.01%     1  Depositos eolicos activos en dunas estelares
+#     [NEG] Arena eolica activa.
+#
+#      0.20   0.01%    10  Brechas hidrotermales de turmalina del Complejo Yabricoya
+#     [POS] Alteracion hidrotermal declarada en el propio nombre de la
+#     unidad. Es el positivo mas limpio de toda la carta.
+#
+#      0.19   0.01%     1  Formacion Longacho
+#     [AMB] Sin alteracion declarada y sin argumento para descartarla del
+#     todo.
+#
+#      0.13   0.01%     1  Complejo intrusivo Cerro Colorado, brechas intrusivas
+#     [POS] Brechas del complejo que da nombre al distrito de porfido
+#     cuprifero. Una brecha intrusiva es un conducto de fluidos.
+#
+#      0.05   0.00%     5  Porfido daciticos y riodaciticos del Cretacico Superior alto-Paleoceno Inferior
+#     [POS] Porfido dacitico-riodacitico.
+#
+#      0.04   0.00%     2  Depositos aluviales antiguos, facies de humedales
+#     [NEG] Facies de humedal: sales y arcillas de precipitacion, no de
+#     alteracion hidrotermal.
+#
+# ==========================================================================

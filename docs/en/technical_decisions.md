@@ -202,31 +202,37 @@ three extra bands is memory, and memory is cheap next to re-reading the product.
 
 | Parameter | Value |
 |-----------|-------|
-| Tile | `T19KDT` (Pampa del Tamarugal, Tarapacá Region, Chile) |
+| Tile | `T19KDT` (Cerro Colorado district, Tarapacá Precordillera, Chile) |
 | Product | `S2B_MSIL2A_20251231T144729_N0511_R139_T19KDT_20251231T200248.SAFE` |
 | CRS | EPSG:32719 (UTM 19S) |
-| AOI window | `col_off=1000, row_off=1000, width=2000, height=2000`, on the 20 m grid |
-| Extent | 40 × 40 km |
-| WGS84 bbox | `[-69.7673, -20.4377, -69.383, -20.075]` |
+| AOI window | `col_off=2700, row_off=650, width=2000, height=2000`, on the 20 m grid |
+| Extent | 40 × 40 km, E 453,960–493,960 / N 7,747,040–7,787,040 |
+| WGS84 bbox | `[-69.4412, -20.3748, -69.0577, -20.0128]` |
 
 **The pixel window is authoritative; the bbox is informational.** The window
 defines an exact, reproducible crop on the tile grid, whereas the bbox goes
 through a reprojection and ends up rounded. When a bbox is handed to
 `build_scene_from_safe` it is reprojected with `transform_bounds`, converted to
 a window and rounded with `round_offsets().round_lengths()`. Both values coexist
-in `configs/tamarugal_kaolinite.yaml` with that hierarchy annotated.
+in `configs/cerro_colorado_kaolinite.yaml` with that hierarchy annotated.
 
-**The study area changed from the original plan.** The project originally
-targeted the Chuquicamata district (Calama, Antofagasta Region); it moved to
-Pampa del Tamarugal because of data availability. The `chuqui_kaolinite.yaml`
-config became obsolete and was renamed to `tamarugal_kaolinite.yaml`. There is
-exactly one valid version of this fact: any reference to Chuquicamata as the
-active study area elsewhere in the repository is a leftover and should be fixed.
+**The study area changed twice.** The project originally targeted the
+Chuquicamata district (Calama, Antofagasta Region); it moved to Pampa del
+Tamarugal in Week 2 because of data availability, and in Week 5 it shifted
+northeast to the Cerro Colorado district, because the pampa held no mapped
+alteration to validate against (section 10). The config was successively named
+`chuqui_kaolinite.yaml`, `tamarugal_kaolinite.yaml` and today
+`cerro_colorado_kaolinite.yaml`. There is exactly one valid version of this
+fact: any reference to Chuquicamata or Tamarugal as the active study area
+elsewhere in the repository is a leftover and should be fixed.
 
-The scene is almost entirely clear: 99.9977 % valid pixels across the AOI,
-99.92 % classified as bare soil. That is deliberate — absolute desert, no
+The scene is still almost entirely clear: 99.8484 % valid pixels across the AOI,
+99.8085 % classified as bare soil. That is deliberate — absolute desert, no
 vegetation and no cloud — because the goal is detecting a mineral signature at
-the surface, and any cover masks it.
+the surface, and any cover masks it. What gets discarded is almost all
+topographic shadow (0.1505 %), the price of reaching into the Precordillera: the
+previous window, over the flat pampa, discarded 92 pixels and this one discards
+6,064. Still negligible against 4 million.
 
 ## 4. Validity mask
 
@@ -408,119 +414,100 @@ is, the test that consumes it stays under `skipif`. The same applies to
 
 ### The config threshold is still uncalibrated
 
-There are **two measurements at two different scales**, and both are kept
-because they say different things. Neither replaces the other: the first was
-taken in Week 2 over a subsample, the second is over the AOI the pipeline now
-walks end to end.
-
-**256×256 px window** (65,536 pixels, 100 % valid, all bare soil), on the
-masked cube:
-
-| bands | min | median | max | below threshold 0.1 |
-|-------|-----|--------|-----|---------------------|
-| `SAM_BANDS` (9)   | 0.164 | 0.250 | 0.453 | 0 of 65,536 |
-| `BAND_ORDER` (12) | 0.166 | 0.247 | 0.426 | 0 of 65,536 |
-
-**Full AOI, 2000×2000 px** (3,999,908 valid pixels out of 4,000,000, i.e.
-99.9977 %). Taken from the summary printed by
-`python scripts/run_pipeline.py --config configs/tamarugal_kaolinite.yaml`:
+**Full AOI, 2000×2000 px** (3,993,936 valid pixels out of 4,000,000, i.e.
+99.8484 %). It comes from the summary printed by
+`python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml`:
 
 | bands | min | p1 | median | max |
 |-------|-----|----|--------|-----|
-| `SAM_BANDS` (9) | 0.0723 | 0.2055 | 0.2742 | 0.6971 |
+| `SAM_BANDS` (9) | 0.0662 | 0.2004 | 0.2795 | 0.6859 |
 
 | threshold (rad) | pixels | % of valid AOI |
 |-----------------|--------|----------------|
 | 0.05 | 0 | 0.000 % |
-| 0.08 | 5 | 0.000 % |
-| 0.10 | **62** | 0.002 % |
-| 0.15 | 4,513 | 0.113 % |
-| 0.20 | 30,885 | 0.772 % |
+| 0.08 | 28 | 0.001 % |
+| 0.10 | **131** | 0.003 % |
+| 0.15 | 1,482 | 0.037 % |
+| 0.20 | 38,672 | 0.968 % |
 
-Both full-AOI tables carry **only the 9-band row**: the pipeline runs
-`SAM_BANDS` and that is all that has been measured at this scale. The
-experiment was not repeated with `BAND_ORDER` over the 4 million pixels, so
-that row does not exist and is not estimated.
+The table has **only the 9-band row**: the pipeline runs `SAM_BANDS` and that is
+all there is measured at this scale. The experiment was not repeated with
+`BAND_ORDER` over the 4 million pixels, so that row does not exist and is not
+estimated.
 
-#### What the 62 pixels are: still not a detection
+These figures belong to the Cerro Colorado window. Those of the previous AOI,
+over the Pampa del Tamarugal, are in section 10 and in `CHANGELOG.md`, which is
+where the change is narrated; they are not kept here so that this document
+carries a single set of current numbers.
+
+#### What the 131 pixels are: still not a detection
 
 What follows is evidence in favour, and it is not enough. **The direction of an
-absorption feature does not identify a mineral** while stage 9 does not exist:
-without ground truth there is no way to separate kaolinite from any other
-surface that descends between B11 and B12. It is written down because it was
-measured and unrecorded, not because it settles anything.
+absorption feature does not identify a mineral**: without checking against
+ground truth there is no way to separate kaolinite from any other surface that
+descends between B11 and B12.
 
-The 62 pixels below 0.1 rad **do reproduce the Al–OH absorption in direction**:
+The 131 pixels below 0.1 rad **do reproduce the Al–OH absorption in direction**:
 
-| | the 62 | background (3,999,846 valid) | USGS KGa-1 signature |
+| | the 131 | background (3,993,805 valid) | USGS KGa-1 signature |
 |---|---|---|---|
-| B12/B11 ratio (median) | **0.679** | 1.011 | 0.507 |
-| with ratio < 1 | **62 of 62** | 44 % | — |
-| mean reflectance, 9 bands | 0.391 | 0.229 | — |
-| SCL class | **62 of 62 in 5 (bare soil)** | — | — |
+| B12/B11 ratio (median) | **0.663** | 1.000 | 0.507 |
+| with ratio < 1 | **131 of 131** | 50 % | — |
+| mean reflectance, 9 bands | 0.278 | 0.207 | — |
 
-All 62 descend from B11 to B12, all 62 sit on bare soil and none touches the AOI
-edge — the closest is 7 px away — so they are not cropping artefacts. They
-cluster into 26 8-connected components, the largest of 9 pixels: patches, not
-single-pixel noise. Nor are they isolated within their surroundings: **the
-median of the 5 × 5 neighbourhood excluding the centre pixel** — the 24
-neighbours, with `np.nanmedian` — is 0.1394 rad against the scene's 0.2742, and
-in 38 of the 62 that neighbourhood also stays below 0.15. The statistic is named
-because it changes the answer: the mean of the same neighbourhood gives 0.1522
-and 28 of 62. The descent is shallower than the laboratory signature's
-(0.679 against 0.507), which is what one expects of a 20 m pixel where the
-mineral, if present, comes mixed with everything else in 400 m².
+The 131 descend from B11 to B12 and none touches the AOI edge — the closest is
+248 px away — so they are not crop artefacts. They cluster into 20 connected
+components under 8-neighbour connectivity, the largest of 79 pixels: they are
+patches, not single-pixel noise. Nor are they isolated in their surroundings:
+**the median of the 5 × 5 neighbourhood** is 0.1020 rad against 0.2795 for the
+scene, and in 123 of the 131 that neighbourhood also stays below 0.15. With the
+mean of the same neighbourhood it gives 0.1143 and 121 of 131; the statistic is
+named because the two figures differ. The drop is shallower than the laboratory
+signature's (0.663 against 0.507), which is what one expects of a 20 m pixel
+where the mineral, if present, comes mixed with everything else in 400 m².
 
-#### Why the two measurements differ so much
+#### Where they fall: the figure that changes the reading
 
-The minimum drops from 0.164 to 0.0723 and the 0.1 threshold goes from leaving
-0 pixels to leaving 62. Two effects push in the same direction, and this
-measurement does not separate them:
+Since Week 5 the AOI includes mapped alteration, so the question that could not
+even be stated before can now be counted:
 
-1. **There are ~61 times more samples.** A sample minimum is an extreme order
-   statistic: it drifts towards the centre of the distribution when there are
-   few observations, simply because the lower tail is unpopulated. 65,536
-   pixels are not enough for the 62 cases that fall below 0.1 among 3,999,908 —
-   16 per million — to show up, and in a subsample that size finding zero is
-   the expected outcome even when they exist.
-2. **The full AOI is more heterogeneous.** The small window is 5.12 × 5.12 km
-   of homogeneous bare soil; the AOI's 40 × 40 km take in the drainage network,
-   the piedmont, the town and the irrigated fields. That the median also shifts
-   (0.250 → 0.2742) and the maximum nearly doubles (0.453 → 0.6971) is the sign
-   that sample size is not the whole story: these are surfaces the window did
-   not contain.
+| ground-truth class | AOI pixels | detections at 0.1 rad |
+|---|---|---|
+| positive (mapped alteration) | 50,773 (1.27 %) | **0** |
+| negative (non-candidate) | 192,444 (4.81 %) | **0** |
+| ambiguous (unclassified) | 3,756,783 (93.92 %) | **131** |
 
-**What would be wrongly concluded by generalising the small window to the full
-AOI** is that no reasonable threshold separates anything and that the SAM route
-is exhausted: at 0.15 rad there are 4,513 pixels, which is a population one can
-actually work with. Conversely, calibrating the threshold against the 256×256
-px window would mean tuning it on a crop that does not contain the lower tail
-one is trying to detect. Every angle figure in this project has to state which
-window it was measured over; without that, it is not comparable to any other.
+**130 of the 131 fall on a single unit**: `Depositos antropicos, botaderos de
+mina`, the waste dumps of the Cerro Colorado mine, 16.79 km² and 1.05 % of the
+AOI. The remaining one falls on a conglomeratic facies of the Altos de Pica
+Formation.
+
+That explains all three figures above at once: the connected patches, the mean
+reflectance higher than the background (0.278 against 0.207) and the uniformly
+sub-unity B12/B11 ratio are what one expects from crushed, freshly exposed rock
+without the desert's crust and varnish. SAM is finding something real and
+spatially coherent — 130 hits inside 1 % of the area — but it is disturbed
+material, not *in situ* geology.
+
+**Within the units declared positive the minimum angle is 0.1541 rad**, well
+above the threshold: not a single mapped-alteration pixel resembles kaolinite at
+this scale. That is the result to be able to explain, and the likeliest
+explanation is that the desert's natural surface is coated by crust and varnish
+that mask the signature, while mine material exposes it.
 
 #### The conclusion is unchanged
 
-`configs/tamarugal_kaolinite.yaml` sets `angle_threshold_rad: 0.1`. **That value
-still has no calibration criterion**, and it is deliberately left untouched
-here: it has to be replaced with a criterion, not with another number picked by
-eye. That it now leaves 62 pixels instead of 0 does not validate it — it only
-shows that the earlier 0 was an artefact of the window size.
+`configs/cerro_colorado_kaolinite.yaml` sets `angle_threshold_rad: 0.1`. **That
+value still has no calibration criterion**, and it is deliberately left
+untouched here: it has to be replaced with a criterion, not with another number
+picked by eye. Calibrating it requires the ROC curve, which is
+`validation/metrics.py` work.
 
-**62 pixels out of 3,999,908 are not a kaolinite detection.** The spectral
+**131 pixels out of 3,993,936 are not a kaolinite detection.** The spectral
 angle measures resemblance to a laboratory signature, not the presence of a
-mineral: any surface that looks similar across 9 bands scores just as low.
-While `validation/` has no ground truth (stage 9 of the
-[pipeline](pipeline.md)) there is nothing to estimate how many of those pixels
-are the mineral. The notebook figure shows the mechanism over the small window:
-the reference plunges from B11 to B12 through the Al–OH absorption and neither
-of the two plotted pixels follows it.
-
-Over the 256×256 px window the two distributions — 9 and 12 bands — are
-practically identical, which is what one expects and not an argument for
-either. Dropping B1, B8 and B9 does not change the result over clear desert
-because there all three contribute little useful variance. The reason to prefer
-9 remains the one in section 2, not performance; what this number adds is that
-the trim **costs nothing**, which is what had to be checked before fixing it.
+mineral: any surface that looks similar across 9 bands scores just as low. Now,
+in addition, it is known *where* they fall, and the place is not the one E3 asks
+for.
 
 ## 8. The SAM detector
 
@@ -740,7 +727,7 @@ compatible with argillic alteration, and that is a geological judgement, not a
 fact from the map.
 
 That is why the selection is not in the code: it lives in
-`configs/verdad_terreno_tamarugal.yaml`, versioned, with one line of
+`configs/verdad_terreno_cerro_colorado.yaml`, versioned, with one line of
 justification per unit and the full list of the 38 units present in the AOI with
 their areas. It is the first thing anyone will challenge in a defence, and they
 have to be able to challenge it by reading a YAML, not by reading Python.
@@ -812,3 +799,102 @@ Two related details, both tested:
   is chosen because it is the rare class: erasing it with a negative would make
   it vanish without a trace, whereas the reverse only adds positive area that is
   visible in the figure.
+
+
+## 10. The Week 5 AOI move
+
+Three decisions that have to survive being challenged.
+
+### 10.1 Why the AOI moved: E3 could not be met
+
+Week 4 delivered the ground-truth layer and, in building it, the problem
+surfaced: **inside the Pampa del Tamarugal AOI there was not a single unit with
+mapped hydrothermal alteration**. 96 % of the AOI was sedimentary fill —
+alluvial, saline, aeolian and piedmont deposits — and the three candidate units
+of the Mamina sheet all fell outside:
+
+| Unit | Distance from the old AOI's eastern edge |
+|---|---|
+| Tourmaline hydrothermal breccias (Yabricoya Complex) | 29.5 km |
+| Cerro Colorado intrusive complex | 10.3 km |
+| Yabricoya Complex (all facies) | 19.1 km |
+
+With zero documented alteration zones, criterion **E3** of the master plan —
+"detections concentrate preferentially in documented argillic/hydrothermal
+alteration zones" — could not even be stated, and neither could **E4** (recall,
+F1, ROC/AUC). It is not that the result was poor: the question was meaningless
+over that crop.
+
+The answer was to move the window, not to restate the criterion. The window goes
+from `col_off=1000, row_off=1000` to `col_off=2700, row_off=650`. **It does not
+grow**: still 2000 × 2000 px at 20 m, i.e. 40 × 40 km, and the `.npz` weighs the
+same.
+
+`row_off` drops from 1000 to 650 because **Cerro Colorado lies to the northeast,
+not merely east**: its southern edge (N 7,782,431) sat 2.4 km above the old
+AOI's northern edge, so widening eastwards alone would have left it out. With
+the new window all three units come in — Yabricoya is clipped at its eastern
+edge, 5.9 km — and the mapping still covers the AOI fully.
+
+What changed in the figures:
+
+| | Tamarugal AOI | Cerro Colorado AOI |
+|---|---|---|
+| Window | `col_off=1000, row_off=1000` | `col_off=2700, row_off=650` |
+| Valid pixels | 99.9977 % (92 discarded) | 99.8484 % (6,064 discarded) |
+| Angle min / median / max | 0.0723 / 0.2742 / 0.6971 | 0.0662 / 0.2795 / 0.6859 |
+| Detections at 0.1 rad | 62 | 131 |
+| Positive in the ground truth | 0 px | 50,773 px (1.27 %) |
+
+The drop in valid pixels is topographic shadow: the window reaches into the
+Precordillera and has relief. 0.15 % remains negligible.
+
+### 10.2 What was declared positive, and on what criterion
+
+`configs/verdad_terreno_cerro_colorado.yaml` declares **8 units as positive**
+(20.30 km², 1.27 % of the AOI): the tourmaline hydrothermal breccias, both
+facies of the Cerro Colorado intrusive complex and the felsic porphyries —
+dacitic, rhyodacitic and rhyolitic — including those of the Yabricoya Complex.
+The criterion is hydrothermal alteration declared on the sheet, or felsic
+porphyritic lithology of the district.
+
+**Ten units are negative** (76.94 km², 4.81 %): active aeolian, active alluvial,
+colluvial, landslide deposits and agricultural cover. Everything else stays
+ambiguous (93.92 %) and is excluded from the metric computation.
+
+The debatable decision, and it should be stated before anyone asks: **the
+plutonic facies of the Yabricoya Complex are not positive** despite belonging to
+the complex. They are 81.65 km², four times the entire positive class. They are
+monzogranites and syenogranites, i.e. batholith country rock, not the
+mineralised porphyry system; including them would multiply the positive class
+fivefold with no declared alteration and dilute it into uselessness as a
+reference.
+
+### 10.3 How the mine was classified, and why that decides E3
+
+The operating Cerro Colorado mine sits inside the AOI. The sheet records it as
+`Depositos antropicos, botaderos de mina`: **16.79 km², 1.05 % of the AOI**.
+
+It was classified as **ambiguous, explicitly and not by omission**. Both readings
+are real and they cancel out:
+
+- For positive: a porphyry's waste rock *is* altered rock, crushed and exposed.
+  Spectrally it may be the clay-richest visible surface in the AOI.
+- For negative: a waste dump is not a mapped alteration zone but a human
+  earthwork, and its location is not that of the original rock.
+- And there is circularity: the mine is there **because** there is alteration.
+  Declaring it positive all but guarantees a hit at the most conspicuous point
+  on the map and would inflate the result with no geological backing.
+
+**That decision decides the answer to E3 outright**, and the data confirms it: of
+the 131 detections at 0.1 rad, **130 land exactly on the waste dumps**. With the
+dumps declared positive, 99.2 % of detections would fall in the positive class
+and E3 would be met spectacularly. Under the classification adopted, **zero
+detections fall in positive and E3 is not met**.
+
+Honesty requires stating both and leaving the decision where it can be reviewed.
+What no classification changes is the bare fact: within the mapped alteration
+units the minimum angle is 0.1541 rad, well above the threshold. **No *in situ*
+alteration zone in the AOI resembles kaolinite at 20 m resolution.** The likeliest
+explanation is that desert crust and varnish mask the signature on the natural
+surface, while the mine's disturbed material exposes it.
