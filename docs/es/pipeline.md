@@ -18,14 +18,19 @@ repetirlo.
 | 6 | Entregar y serializar el `Scene` | `preprocessing/scene_builder.py`, `io/raster_io.py` | Implementada |
 | 7 | Firma de referencia y comparación visual | `spectral/endmembers.py`, `visualization/spectra.py` | Implementada |
 | 8 | Algoritmo de detección | `algorithms/sam.py`, `pipeline.py` | Implementada |
-| 9 | Validación contra cartografía | `validation/` | **Parcial**: la capa de verdad existe; faltan las métricas |
+| 9 | Validación contra cartografía | `validation/`, `scripts/evaluate.py` | Implementada |
 | 10 | Visualización y exportación de resultados | `visualization/maps.py`, `io/raster_io.py` | Implementada |
 
 Las etapas 1 a 6 son el preprocesamiento que cerró la Semana 2 y las encadena
 una sola función, `build_scene_from_safe()`. Las etapas 7, 8 y 10 las encadena
 `run_pipeline(config)`, que cerró la Semana 3: desde el YAML del experimento
-hasta el GeoTIFF y el heatmap, sin pasos manuales. La única etapa sin
-implementar es la 9.
+hasta el GeoTIFF y el heatmap, sin pasos manuales. La etapa 9 cerró en dos
+tiempos: la capa de verdad de terreno en la Semana 4 y las métricas en la
+Semana 6.
+
+**La única etapa sin implementar es la 0**, la adquisición automática de la
+escena, que sigue siendo manual a propósito: es Nivel 2 y no bloquea nada
+mientras el producto `.SAFE` esté descargado.
 
 ## El flujo implementado: de `.SAFE` a `Scene`
 
@@ -409,9 +414,9 @@ figura `kaolinite_signature_vs_pixel.png`.
 interactiva y cierra con la verificación de alineamiento entre el cubo y la
 firma de referencia.
 
-## Etapa 9: la mitad hecha
+## Etapa 9: la validación, completa
 
-### Lo que quedó hecho (Semana 4, Track A): la capa de verdad de terreno
+### La capa de verdad de terreno (Semana 4, Track A)
 
 `validation/geology.py` está implementado. El camino completo es:
 
@@ -440,9 +445,11 @@ La capa tiene **tres** valores: `1` positivo, `0` negativo y `255` ambiguo
 clase está en [decisiones_tecnicas.md](decisiones_tecnicas.md), sección 9.
 
 Qué unidad cuenta como positivo **no está en el código**: se declara en
-`configs/verdad_terreno_cerro_colorado.yaml`, porque es un juicio geológico y no un
-dato del mapa. Con ese YAML sin llenar el pipeline corre igual y produce una
-capa 100 % ambigua, que es el estado en que está hoy.
+`configs/verdad_terreno_cerro_colorado.yaml`, porque es un juicio geológico y no
+un dato del mapa. Con ese YAML sin llenar el pipeline corre igual y produce una
+capa 100 % ambigua; hoy está lleno, y la capa reparte 50.773 píxeles en
+positivo (1,27 % del AOI), 192.444 en negativo (4,81 %) y 3.756.783 en ambiguo
+(93,92 %).
 
 La figura F5, `outputs/figures/overlay_deteccion_geologia.png`, superpone el
 mapa de ángulos y los polígonos; la dibuja
@@ -453,19 +460,50 @@ siempre float32 con `nodata=NaN`, así que `ground_truth.tif` trae `1.0`, `0.0`
 y `255.0` en float32, no uint8. Los tres valores son exactos en float32, pero
 quien lo lea tiene que castear antes de comparar por igualdad.
 
-### Lo que falta: las métricas (Track B)
+### Las métricas (Semana 6, Track B)
 
-`validation/metrics.py` (matriz de confusión, F1, IoU, ROC/AUC, kappa) y
-`scripts/evaluate.py` siguen siendo stubs completos: todas sus funciones
-levantan `NotImplementedError`.
+`validation/metrics.py` y `scripts/evaluate.py` están implementados. El camino
+es:
 
-**Es lo que impide llamar «detección de caolinita» al mapa de la etapa 8.** Lo
-que hay es un mapa de similitud espectral: dice a qué distancia angular está
-cada píxel de la firma de laboratorio, no qué mineral hay en el suelo. La capa
-de verdad de terreno es la referencia contra la cual medirlo, pero medir es lo
-que todavía no se hizo. Quien lo haga tiene que excluir los `255` del cálculo.
-Las cifras medidas están en la sección «Resultados» del
-[README](../../README.md#resultados).
+```
+outputs/maps/kaolinite_sam_angle.tif  +  outputs/maps/ground_truth.tif
+   |
+   |-- evaluar_desde_rasters(...) ....... lee ambos y ABORTA si crs, transform
+   |                                      o forma no coinciden
+   |-- preparar_pares(...) .............. UNICO filtro: descarta ambiguo, NaN
+   |                                      del puntaje y máscara del Scene
+   |-- confusion_matrix / precision / recall / f1 / iou / cohen_kappa / roc_auc
+   |-- curva_roc(...) .................. ROC completa + umbral de Youden y de
+   v                                      F1 máximo
+tabla impresa  +  --out JSON  +  --figura outputs/figures/roc_kaolinite_sam.png
+```
+
+Las cinco métricas están en NumPy puro, sin `scikit-learn` en producción, y
+`preparar_pares` es **el único sitio** que decide qué píxel entra al cálculo:
+que ese filtro viva en un solo lugar es lo que impide que una métrica excluya
+los `255` y otra no. El AUC exige la dirección del puntaje como argumento
+obligatorio (`higher_is_better`), porque el ángulo del SAM va al revés y medirlo
+con el signo cambiado devuelve `1 - AUC` sin lanzar nada.
+
+`scripts/evaluate.py` es la CLI:
+
+```bash
+python scripts/evaluate.py outputs/maps/kaolinite_sam_angle.tif \
+    outputs/maps/ground_truth.tif --figura
+```
+
+Imprime cuántos píxeles entraron y cuántos se descartaron por cada causa, la
+matriz de confusión, las seis métricas y los dos umbrales de calibración. El
+umbral y la dirección salen del config del experimento, no de constantes del
+script.
+
+**Esto es lo que permitía —y ahora impide— llamar «detección de caolinita» al
+mapa de la etapa 8.** Medido: sobre 242.967 píxeles evaluables el F1, el IoU y
+el kappa valen 0, y el **ROC AUC es 0,2403**, por debajo del 0,5 del azar. El
+detector no solo no separa las clases: las separa al revés. Las cifras y su
+lectura están en la sección «Resultados» del
+[README](../../README.md#resultados) y en
+[decisiones_tecnicas.md](decisiones_tecnicas.md), secciones 7 y 11.
 
 `io/raster_io.py::read_scene()` también sigue sin implementarse. Es la
 contraparte de leer un `Scene` multibanda desde GeoTIFF y no bloquea nada: el

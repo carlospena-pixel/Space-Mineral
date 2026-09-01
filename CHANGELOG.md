@@ -350,6 +350,98 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   vuelve a ser informulable.
 
 
+#### Semana 6: las métricas de validación, y el resultado que dan
+
+- **`validation/metrics.py` implementado**, con las cinco métricas del stub más
+  las piezas que hacían falta para poder defenderlas: `confusion_matrix`,
+  `precision_score`, `recall_score`, `f1_score`, `iou_score`, `cohen_kappa`,
+  `roc_auc`, `curva_roc`, `preparar_pares`, `evaluar_deteccion` y
+  `evaluar_desde_rasters`. Todo en NumPy puro; `scikit-learn` aparece solo
+  dentro de los tests, bajo `pytest.importorskip`, como oráculo de contraste.
+
+  Tres decisiones de diseño que no son obvias y que están argumentadas en
+  `docs/es/decisiones_tecnicas.md`, sección 11:
+
+  **`preparar_pares` es el único sitio que decide qué píxel entra al cálculo.**
+  Si cada métrica aplicara su propio filtro, bastaría con que una olvidara
+  excluir los ambiguos para que la tabla mezclara números calculados sobre
+  poblaciones distintas —la matriz de confusión sobre 242.967 píxeles y el AUC
+  sobre 3.993.936— presentados en la misma columna, sin que nada falle.
+
+  **El AUC exige la dirección del puntaje como argumento obligatorio y por
+  palabra clave.** El ángulo del SAM va al revés: menor es más evidencia. Un AUC
+  calculado con la dirección invertida devuelve `1 - AUC` —0,7597 en vez de
+  0,2403—, no lanza ninguna excepción y se puede defender en una presentación.
+  La dirección viaja desde `Detector.higher_is_better`, su única fuente de
+  verdad, y no desde una constante escrita en el script.
+
+  **El AUC promedia los empates** (Mann-Whitney U con rangos promedio,
+  equivalente a la regla del trapecio). No es una precaución teórica: sobre los
+  242.967 píxeles evaluables hay 238.202 valores distintos, o sea 4.765 empates
+  reales, porque el ángulo se almacena en `float32`.
+
+  F1 e IoU devuelven `0.0` —no `ValueError` ni `nan`— cuando no hay ninguna
+  detección predicha, porque ése es exactamente el caso de la corrida principal
+  y hay que poder reportarlo. `roc_auc`, en cambio, **lanza `ValueError` con una
+  sola clase presente**: un `nan` devuelto ahí acabaría impreso en una tabla
+  como si fuera una medición.
+
+- **`scripts/evaluate.py` implementado**, siguiendo el patrón de
+  `construir_verdad_terreno.py`: solo parsea argumentos, llama al paquete e
+  imprime. Argumentos `--threshold`, `--scene`, `--out` (JSON), `--figura` y
+  `--config`. El umbral y la dirección salen del config del experimento, no de
+  constantes del script. Antes de comparar nada, aborta si los dos GeoTIFF no
+  comparten CRS, transform y forma: dos rásteres desalineados producen una
+  matriz de confusión y un AUC impecables sobre pares de píxeles que no son el
+  mismo punto del terreno, y no hay inspección de la salida que lo delate.
+
+- **`visualization/validacion.py`**: `plot_curva_roc` y
+  `plot_histograma_por_clase`. Van en la misma figura a propósito, porque un AUC
+  solo no distingue «las distribuciones se superponen» de «están separadas, pero
+  al revés», y esas dos lecturas llevan a decisiones opuestas. La figura es
+  `outputs/figures/roc_kaolinite_sam.png`.
+
+- **`tests/test_metrics.py`**: 42 pruebas, todas con valores calculados a mano y
+  escritos como literales, sin red y sin la escena de 196 MB. Cubren la
+  exclusión de los `255` y de los `NaN`, la complementariedad `AUC + AUC' = 1`
+  al invertir la dirección, el caso desbalanceado en que un clasificador que
+  dice «no» a todo tiene 98 % de exactitud y F1 = 0, y los fallos ruidosos.
+
+- **El resultado, que es negativo y se reporta tal cual.** Sobre 242.967 píxeles
+  evaluables (se descartan 3.756.783 ambiguos y 250 sin dato):
+
+  | | valor |
+  |---|---|
+  | VP / FP / FN / VN | 0 / 0 / 50.731 / 192.236 |
+  | precisión, recall, F1, IoU, kappa | 0,0000 |
+  | **ROC AUC** | **0,2403** |
+
+  Los ceros son un solo hecho contado cinco veces: con el umbral del config no
+  hay ninguna detección dentro de las clases evaluables. El número que informa
+  es el AUC, porque no depende del umbral, y **0,2403 está por debajo del 0,5
+  del azar**: el detector no es que no separe, es que **separa al revés**. La
+  mediana del ángulo es 0,3288 rad dentro del positivo y 0,2712 dentro del
+  negativo — las unidades que la cartografía declara compatibles con alteración
+  se parecen *menos* a la caolinita de laboratorio que las que declara no
+  candidatas.
+
+  No se ajustó nada para mejorar el número. No se reclasificó ninguna unidad del
+  YAML, no se movió el umbral y no se cambió el filtro de píxeles. Las tres
+  hipótesis que podrían explicarlo —que la arcilla expuesta esté en los
+  botaderos y no en la roca *in situ*, que el barniz del desierto enmascare la
+  firma, o que 9 bandas a 20 m no basten para separar caolinita de otras
+  superficies— están en decisiones técnicas, sección 11.1, sin elegir entre
+  ellas.
+
+- **La calibración del umbral existe, y no rescata nada.** El umbral que
+  maximiza el índice de Youden es 0,4467 rad y alcanza J = 0,0034, separación
+  indistinguible de cero. El que maximiza F1 es 0,4492 rad y detecta 242.276 de
+  los 242.967 píxeles: es el clasificador que dice «sí» a todo, cuyo F1 sería
+  0,3455 por construcción. **`angle_threshold_rad` sigue en 0,1 en el config**:
+  lo que la calibración aporta no es un número nuevo para el YAML, es la
+  evidencia de que el problema no está en el umbral. Cambiarlo es decisión de la
+  dueña del repositorio.
+
 ### Changed
 
 #### Cierre de la Semana 3: seis defectos de documentación y arquitectura
@@ -564,6 +656,35 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
   detección que reportar. De paso, el árbol de «Estructura» decía que
   `outputs/` no se versiona, cuando `outputs/figures/*.png` sí lo hace desde el
   commit que fijó esa excepción en `.gitignore`.
+
+#### Semana 6: deudas técnicas cerradas de paso
+
+- `algorithms/random_forest.py` y `algorithms/unmixing.py`: **firmas alineadas
+  al contrato**. Ambas declaraban `predict(self, cube)`, un argumento menos que
+  `Detector.predict(self, cube, reference)`. Python no comprueba las firmas al
+  heredar, así que la contradicción no rompía nada mientras el cuerpo lanzara
+  `NotImplementedError` — pero el día que alguien escribiera el cuerpo, el
+  pipeline lo habría llamado con dos argumentos y habría reventado con un
+  `TypeError` a mitad de una corrida larga, lejos de la causa. El cuerpo sigue
+  igual. El `fit()` que ninguna de las dos hereda del contrato se conserva,
+  documentado explícitamente como extensión fuera de `Detector`: un clasificador
+  supervisado necesita un paso previo con estado, y resolver ese hueco es
+  trabajo de Nivel 2, no algo que se decida de pasada.
+
+- `scripts/verificar_cifras.py`: **también coteja las métricas nuevas**. Se le
+  añadieron `--ground-truth` y `--config`, y la regla del repo se mantiene: 80
+  cifras publicadas a mano en README, `decisiones_tecnicas.md` y
+  `technical_decisions.md` tienen ahora un chequeo automático que las contradice
+  cuando envejezcan. Los rótulos de los dos bloques del README (ES y EN) deben
+  ser textualmente distintos, porque el archivo es uno solo y cada pasada lo
+  recorre entero: un rótulo compartido haría que la pasada ES leyera la fila EN
+  con la convención decimal equivocada, y «0.2403» interpretado como español da
+  2403.
+
+- Documentación actualizada al estado real: la etapa 9 pasa de «parcial» a
+  implementada en `docs/es/pipeline.md` y `docs/en/pipeline.md`, la sección 7 de
+  decisiones técnicas deja de decir que el umbral «espera un criterio», y el
+  README publica la tabla de métricas en sus dos bloques.
 
 ### Removed
 - `construir_scene_final()` de `scripts/construir_scene.py`: estaba marcada

@@ -501,12 +501,41 @@ y la explicación más plausible es que la superficie natural del desierto está
 cubierta por costra y barniz que enmascaran la firma, mientras que el material
 de mina la expone.
 
-#### La conclusión no cambia
+#### El criterio de calibración ya existe (Semana 6)
 
-`configs/cerro_colorado_kaolinite.yaml` fija `angle_threshold_rad: 0.1`. **Ese
-valor sigue sin criterio de calibración**, y no se cambia en este trabajo a
-propósito: hay que reemplazarlo por un criterio, no por otro número elegido a
-ojo. Calibrarlo exige la curva ROC, que es trabajo de `validation/metrics.py`.
+`configs/cerro_colorado_kaolinite.yaml` fija `angle_threshold_rad: 0.1`. Hasta
+la Semana 5 ese valor no tenía criterio de calibración y este documento decía
+que calibrarlo exigía la curva ROC. **La curva ya existe** —
+`validation/metrics.py` y `scripts/evaluate.py` están implementados — y lo que
+dice es que no hay ningún umbral que rescate este mapa:
+
+| criterio | umbral (rad) | valor alcanzado |
+|---|---|---|
+| índice de Youden | 0,4467 | 0,0034 |
+| F1 máximo | 0,4492 | 0,3462 |
+
+Los dos se reportan porque optimizan cosas distintas —Youden pesa igual los dos
+tipos de error, F1 ignora los verdaderos negativos— y sobre una clase con
+20,88 % de positivos no tienen por qué coincidir. Aquí, sin embargo, **ninguno
+de los dos es utilizable**:
+
+- El de Youden alcanza J = 0,0034. Un J de 0 es un clasificador que no separa
+  nada; 0,0034 es indistinguible de eso.
+- El de F1 máximo detecta 242.276 de los 242.967 píxeles evaluables, o sea el
+  99,72 %. Es el clasificador que dice «sí» a todo, cuyo F1 sería 0,3455 por
+  construcción; el 0,3462 que se reporta es esa cifra más el ruido de dejar
+  fuera 691 píxeles. No es una calibración, es la tasa base disfrazada de
+  resultado.
+
+**El valor del config sigue siendo el heredado, 0,1 rad, y no se cambia aquí.**
+Cambiarlo es decisión de la dueña del repositorio, y además ninguno de los dos
+umbrales calibrados mejora nada que valga la pena mover: mover el umbral de
+0,1 a 0,4467 convertiría 0 detecciones en casi 4 millones sin ganar poder
+discriminante. Lo que la calibración aporta no es un número nuevo para el YAML,
+es la evidencia de que **el problema no está en el umbral**. El detalle está en
+la sección 11.
+
+#### La conclusión no cambia
 
 **131 píxeles de 3.993.936 no son una detección de caolinita.** El ángulo
 espectral mide parecido contra una firma de laboratorio, no presencia de un
@@ -901,3 +930,188 @@ encima del umbral. **Ninguna zona de alteración *in situ* del AOI se parece a l
 caolinita a 20 m de resolución.** La explicación más plausible es que la costra
 y el barniz del desierto enmascaran la firma en la superficie natural, mientras
 que el material removido de la mina la expone.
+
+## 11. El diseño de `metrics.py` y el resultado de la validación
+
+`src/mineralmap/validation/metrics.py`, `scripts/evaluate.py`. Semana 6.
+
+### 11.1 El resultado, primero
+
+```bash
+python scripts/evaluate.py outputs/maps/kaolinite_sam_angle.tif outputs/maps/ground_truth.tif --figura
+```
+
+| | valor |
+|---|---|
+| píxeles evaluables | 242.967 |
+| positivos evaluables | 50.731 |
+| negativos evaluables | 192.236 |
+| verdaderos positivos (VP) | 0 |
+| falsos positivos (FP) | 0 |
+| falsos negativos (FN) | 50.731 |
+| verdaderos negativos (VN) | 192.236 |
+| precisión | 0,0000 |
+| recall | 0,0000 |
+| F1 | 0,0000 |
+| IoU | 0,0000 |
+| kappa de Cohen | 0,0000 |
+| ROC AUC | 0,2403 |
+
+Los umbrales de calibración están en la sección 7. La figura es
+`outputs/figures/roc_kaolinite_sam.png`.
+
+**Los cinco ceros son un solo hecho.** Con el umbral del config no hay ninguna
+detección dentro de las clases evaluables —las 131 del AOI caen todas en
+ambiguo—, así que VP = FP = 0 y todo lo que se calcula a partir de la matriz de
+confusión vale cero. No es un error: es lo que mide un detector que no detecta.
+
+**El número que informa es el AUC, porque no depende del umbral.** Y 0,2403
+está *por debajo* de 0,5. Eso no significa que el detector no separe: significa
+que **separa al revés**.
+
+| | ángulo (rad) |
+|---|---|
+| mediana dentro del positivo | 0,3288 |
+| mediana dentro del negativo | 0,2712 |
+| mínimo dentro del positivo | 0,1541 |
+| mínimo dentro del negativo | 0,1597 |
+
+Las unidades que la cartografía declara compatibles con alteración se parecen
+**menos** a la caolinita de laboratorio que las que declara no candidatas. Un
+AUC de 0,2403 equivale a decir que «ángulo grande» predice el positivo con
+0,7597.
+
+#### Qué no significa esto
+
+No significa que invirtiendo el signo se obtenga un detector de alteración con
+AUC 0,76. Lo que separa en esa dirección no es caolinita: son las diferencias
+litológicas generales entre roca intrusiva y relleno sedimentario, que el
+ángulo contra *cualquier* firma habría capturado igual. Un AUC de 0,76 obtenido
+al revés de lo que el método declara medir no es un hallazgo, es un recordatorio
+de que el SAM contra una sola firma no es un clasificador litológico.
+
+#### Hipótesis, sin elegir entre ellas
+
+Tres explicaciones compatibles con lo medido, ninguna descartada con los datos
+de hoy:
+
+1. **La arcilla expuesta está en los botaderos, no en la roca *in situ*.** Es lo
+   que apuntan las 130 detecciones sobre `Depositos antropicos, botaderos de
+   mina` (sección 10.3). Si es así, la verdad de terreno declara positivo el
+   lugar equivocado —no porque esté mal construida, sino porque la cartografía
+   litológica no es un mapa de alteración.
+2. **Barniz del desierto y costra superficial enmascaran la firma.** La
+   alteración *in situ* llevaría decenas de miles de años expuesta; el material
+   de mina, décadas.
+3. **9 bandas a 20 m no bastan.** El doblete Al–OH de la caolinita vive en
+   2160/2200 nm y Sentinel-2 lo muestrea con una sola banda ancha (B12, centrada
+   en 2185,7 nm en S2B). Separar caolinita de otras superficies con un solo
+   punto dentro del rasgo es pedirle al sensor algo para lo que no está hecho.
+
+La única exploración legítima de la primera hipótesis es una **segunda corrida
+documentada** con los botaderos declarados positivo, reportada aparte y marcada
+como análisis de sensibilidad. **No reemplaza la corrida principal**, y no se ha
+hecho en este trabajo.
+
+### 11.2 Por qué el ambiguo se excluye y no se colapsa a negativo
+
+La regla vive en un solo sitio, `preparar_pares`, y eso es lo que impide que una
+función la aplique y otra no. Un píxel entra al cálculo solo si su verdad de
+terreno es positivo o negativo, su puntaje no es `NaN` y —si se pasa `--scene`—
+la máscara del Scene lo declara válido.
+
+El `255` significa «la cartografía no dice»; el `0` significa «la cartografía
+dice que no hay». Colapsarlos convierte una ausencia de información en evidencia
+negativa. Sobre este AOI, donde el 93,92 % del área es ambigua, esa sustitución
+regala 3.756.783 verdaderos negativos: la exactitud saltaría del 79,12 % actual
+al 98,73 % **sin que el detector acierte un solo píxel más**, y ninguna función
+lanzaría una excepción. Es el argumento que ya justifica la clase `ambiguo` en
+la sección 9.3, aplicado al cálculo en vez de a la construcción de la capa.
+
+Los descartes se cuentan **con precedencia** (ambiguo → NaN en la verdad de
+terreno → NaN en el puntaje → máscara), de modo que las cuatro causas más los
+evaluados sumen exactamente los 4.000.000 de píxeles del AOI. Un desglose donde
+las causas se solapan no cuadra con el total y obliga a quien lee la tabla a
+adivinar si falta algo.
+
+### 11.3 La dirección del puntaje es un argumento obligatorio
+
+`roc_auc` y `curva_roc` exigen `higher_is_better` **sin valor por defecto y solo
+por palabra clave**. Es la decisión de diseño más importante del módulo.
+
+El puntaje del SAM es el ángulo espectral, donde menor es más evidencia. Un AUC
+calculado con la dirección invertida da `1 - AUC`: **0,7597 en vez de 0,2403**.
+Los dos son números válidos, ninguno lanza una excepción y los dos se pueden
+defender en una presentación. Es el error más caro que puede cometer este
+módulo, y es invisible en la salida.
+
+De las dos salidas posibles —un parámetro explícito, o exigir que el llamador
+pase el puntaje ya orientado— se eligió el **parámetro explícito**:
+
+1. Un valor por defecto reintroduce exactamente el fallo que se quiere evitar.
+   Sin default, el llamador no puede omitir la decisión.
+2. `Detector.higher_is_better` ya existe como atributo del contrato (sección 8),
+   así que la dirección viaja desde su única fuente de verdad:
+   `scripts/evaluate.py` la lee de `DETECTORS[nombre].higher_is_better`, no de
+   una constante escrita en el script.
+3. Exigir el puntaje pre-orientado mueve la inversión de signo al llamador, o
+   sea la duplica en cada sitio que mida, y deja mapas de ángulos negados dando
+   vueltas por el código.
+4. Por palabra clave, para que no pueda ocupar por posición el lugar de otro
+   booleano.
+
+Los umbrales que devuelve `curva_roc` salen **en las unidades originales del
+puntaje**, no en las del puntaje orientado, porque su uso inmediato es
+compararlos con `angle_threshold_rad` del config. Devolverlos negados obligaría
+a que quien lee la figura recordara invertirlos.
+
+### 11.4 Convención de empates del AUC
+
+Se calcula por el estadístico de Mann-Whitney U con **rangos promedio**: los
+píxeles con el mismo puntaje reciben todos el rango medio de su grupo. Es
+idéntico a integrar la curva ROC con la **regla del trapecio** —cada grupo de
+empates aporta el rectángulo medio y no un escalón— y es la misma convención de
+`sklearn.metrics.roc_auc_score`.
+
+Importa aquí, y no es una precaución teórica: el ángulo es continuo, pero se
+almacena en `float32`, y sobre 242.967 píxeles evaluables hay solo 238.202
+valores distintos, o sea **4.765 empates reales**. Resolverlos «a favor»
+inflaría el AUC sin que nada fallara.
+
+Por el mismo motivo `curva_roc` corta solo en el último índice de cada grupo de
+empates: un corte dentro de un grupo daría un punto de la curva que ningún
+umbral real puede alcanzar.
+
+### 11.5 F1 e IoU sin ninguna detección devuelven 0,0
+
+Es el caso que ocurre de verdad con este dataset, así que la decisión no es
+académica. Con `VP = FP = 0` la precisión es 0/0, pero el recall es 0 y el F1
+por su fórmula directa `2·VP / (2·VP + FP + FN)` también vale 0.
+
+Se eligió `0.0` sobre `ValueError` porque lanzar obligaría a envolver la corrida
+principal —la que hay que poder reportar— en un `try/except` cuyo único trabajo
+sería imprimir un cero, y porque un detector que no detecta nada tiene
+rendimiento nulo, no rendimiento indefinido. Se eligió `0.0` sobre `nan` porque
+un `nan` se propaga en silencio a cualquier promedio o comparación posterior.
+
+El caso genuinamente indefinido —ni positivos reales ni predichos— también
+devuelve `0.0`: un conjunto sin un solo positivo real no es evidencia de acierto
+perfecto. Ese conjunto ya lo rechaza `roc_auc`, que **lanza `ValueError` cuando
+hay una sola clase presente** en vez de devolver `nan`. El AUC mide la capacidad
+de ordenar positivos por delante de negativos; con una sola clase no hay ningún
+par que ordenar, y un `nan` devuelto ahí acaba impreso en una tabla como si
+fuera una medición.
+
+### 11.6 NumPy puro en producción, `sklearn` solo como oráculo de test
+
+Las cinco métricas están implementadas con NumPy, sin `scikit-learn` en el
+camino de producción, por el mismo criterio de la sección 8: los tests las
+contrastan contra literales calculados a mano, no contra otra implementación. Un
+test que compara dos librerías solo demuestra que ambas coinciden, no que alguna
+acierta.
+
+`sklearn` sí aparece en `tests/test_metrics.py` como contraste **adicional**,
+bajo `pytest.importorskip`, sobre 500 valores redondeados a 2 decimales para
+forzar empates masivos: es donde las convenciones se separan, y comprobar que
+coinciden ahí valida la decisión de 11.4 sin convertirla en la definición de lo
+correcto.

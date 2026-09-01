@@ -34,7 +34,12 @@ pre-commit install
 # Correr un experimento: deja el GeoTIFF en outputs/maps/ y el heatmap en outputs/figures/
 python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml
 
-# Validar contra cartografía: todavía no, scripts/evaluate.py es andamiaje (etapa 9)
+# Construir la verdad de terreno desde la cartografía SERNAGEOMIN
+python scripts/construir_verdad_terreno.py
+
+# Validar contra cartografía: tabla de métricas + curva ROC en outputs/figures/
+python scripts/evaluate.py outputs/maps/kaolinite_sam_angle.tif \
+    outputs/maps/ground_truth.tif --figura
 ```
 
 Los datos (`data/`) no se versionan; ver `docs/es/pipeline.md` para cómo obtenerlos.
@@ -144,8 +149,7 @@ criterio de calibración y no otro número elegido a ojo
 #### Dónde caen esas 131 detecciones
 
 Desde la Semana 4 existe la capa de verdad de terreno
-(`outputs/maps/ground_truth.tif`), así que la pregunta se puede contar. Es un
-conteo, no una métrica: F1, IoU y ROC/AUC siguen sin implementarse.
+(`outputs/maps/ground_truth.tif`), así que la pregunta se puede contar.
 
 | clase de la verdad de terreno | píxeles del AOI | detecciones a 0,1 rad |
 |---|---|---|
@@ -168,6 +172,49 @@ unidades declaradas positivo el ángulo mínimo es 0,1541 rad, muy por encima
 del umbral. Cómo se clasifican los botaderos decide por completo la respuesta
 a E3, y por eso está declarado y argumentado en
 `configs/verdad_terreno_cerro_colorado.yaml` en vez de resolverse por omisión.
+
+#### Las métricas
+
+Desde la Semana 6 el conteo anterior tiene métricas detrás. Las produce
+
+```bash
+python scripts/evaluate.py outputs/maps/kaolinite_sam_angle.tif outputs/maps/ground_truth.tif --figura
+```
+
+que descarta los 3.756.783 píxeles ambiguos y los 250 sin dato, y calcula sobre
+los que quedan:
+
+| | valor |
+|---|---|
+| píxeles evaluables | 242.967 |
+| F1 (umbral 0,10) | 0,0000 |
+| IoU (umbral 0,10) | 0,0000 |
+| kappa de Cohen | 0,0000 |
+| AUC de la curva ROC | 0,2403 |
+
+**El resultado es negativo y no se maquilla.** Los tres ceros son el mismo
+hecho contado tres veces: con el umbral del config no hay ni una detección
+dentro de las clases evaluables, así que no hay nada que acertar. El número
+que informa es el AUC, porque no depende del umbral: **0,2403 está por debajo
+de 0,5**, y eso no significa que el detector no separe, sino que **separa al
+revés**. La mediana del ángulo es 0,3288 rad dentro del positivo y 0,2712 rad
+dentro del negativo: las unidades que la cartografía declara compatibles con
+alteración se parecen *menos* a la caolinita de laboratorio que las que declara
+no candidatas.
+
+`outputs/figures/roc_kaolinite_sam.png` muestra las dos cosas a la vez: la
+curva por debajo de la diagonal y las dos distribuciones que lo explican, con
+el umbral de 0,1 rad cayendo a la izquierda de ambas sin tocar ninguna.
+
+Ninguna calibración rescata esto. El umbral que maximiza el índice de Youden es
+0,4467 rad y consigue J = 0,0034 —separación indistinguible de cero—, y el que
+maximiza F1 es 0,4492 rad, que detecta 242.276 de los 242.967 píxeles: es el
+clasificador que dice «sí» a todo, cuyo F1 sería 0,3455 de todos modos. El
+detalle y las hipótesis están en
+[docs/es/decisiones_tecnicas.md](docs/es/decisiones_tecnicas.md), secciones 7
+y 11. **El `angle_threshold_rad` del config sigue en 0,1**: ahora existe el
+criterio de calibración que faltaba, y lo que dice es que ningún umbral de este
+mapa separa las clases.
 
 ---
 
@@ -202,6 +249,13 @@ pip install -e ".[dev]"
 pre-commit install
 
 python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml
+
+# Build the ground-truth layer from SERNAGEOMIN mapping
+python scripts/construir_verdad_terreno.py
+
+# Validate against the mapping: metrics table + ROC curve in outputs/figures/
+python scripts/evaluate.py outputs/maps/kaolinite_sam_angle.tif \
+    outputs/maps/ground_truth.tif --figura
 ```
 
 `data/` is not versioned; see `docs/en/pipeline.md` for how to obtain it.
@@ -297,8 +351,7 @@ another number picked by eye (`docs/en/technical_decisions.md`, section 7).
 ##### Where those 131 detections fall
 
 Since Week 4 the ground-truth layer exists (`outputs/maps/ground_truth.tif`), so
-the question can be counted. This is a count, not a metric: F1, IoU and ROC/AUC
-remain unimplemented.
+the question can be counted.
 
 | ground-truth class | AOI pixels | detections at 0.1 rad |
 |---|---|---|
@@ -321,6 +374,49 @@ minimum angle is 0.1541 rad, well above the threshold. How the waste dumps get
 classified decides the answer to E3 outright, which is why it is declared and
 argued in `configs/verdad_terreno_cerro_colorado.yaml` rather than settled by
 omission.
+
+##### The metrics
+
+Since Week 6 the count above has metrics behind it. They are produced by
+
+```bash
+python scripts/evaluate.py outputs/maps/kaolinite_sam_angle.tif outputs/maps/ground_truth.tif --figura
+```
+
+which discards the 3,756,783 ambiguous pixels and the 250 with no data, and
+computes over what is left:
+
+| | value |
+|---|---|
+| evaluable pixels | 242,967 |
+| F1 (threshold 0.10) | 0.0000 |
+| IoU (threshold 0.10) | 0.0000 |
+| Cohen's kappa | 0.0000 |
+| ROC curve AUC | 0.2403 |
+
+**The result is negative and is not dressed up.** The three zeros are the same
+fact counted three times: at the config threshold there is not a single
+detection inside the evaluable classes, so there is nothing to get right. The
+informative number is the AUC, because it does not depend on the threshold:
+**0.2403 sits below 0.5**, which does not mean the detector fails to separate
+— it means it **separates the wrong way round**. The median angle is 0.3288 rad
+inside the positive class and 0.2712 rad inside the negative one: the units the
+mapping declares compatible with alteration resemble laboratory kaolinite
+*less* than the ones it declares non-candidates.
+
+`outputs/figures/roc_kaolinite_sam.png` shows both at once: the curve below the
+diagonal, and the two distributions that explain it, with the 0.1 rad threshold
+falling to the left of both without touching either.
+
+No calibration rescues this. The threshold maximising the Youden index is
+0.4467 rad and reaches J = 0.0034 — separation indistinguishable from zero —
+and the one maximising F1 is 0.4492 rad, which detects 242,276 of the 242,967
+pixels: it is the classifier that says "yes" to everything, whose F1 would be
+0.3455 anyway. The detail and the hypotheses are in
+[docs/en/technical_decisions.md](docs/en/technical_decisions.md), sections 7
+and 11. **The config's `angle_threshold_rad` stays at 0.1**: the calibration
+criterion that was missing now exists, and what it says is that no threshold on
+this map separates the classes.
 
 ## License
 
