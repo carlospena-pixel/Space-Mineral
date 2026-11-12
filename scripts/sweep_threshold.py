@@ -43,6 +43,7 @@ from mineralmap.config import Config, load_config
 from mineralmap.io.raster_io import load_scene
 from mineralmap.pipeline import DETECTORS
 from mineralmap.spectral.indices import clay_ratio, mask_by_positive_rate
+from mineralmap.validation.evaluation import decode_truth
 from mineralmap.validation.metrics import (
     agreement,
     cohen_kappa,
@@ -152,6 +153,39 @@ def _leer_mapa(ruta: str, forma_esperada: tuple[int, int]) -> np.ndarray:
     return mapa
 
 
+def _leer_verdad(
+    ruta: str, forma_esperada: tuple[int, int], validos: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Lee la verdad de terreno respetando sus tres clases.
+
+    La capa de `scripts/construir_verdad_terreno.py` trae 1 positivo, 0
+    negativo y 255 ambiguo. Binarizarla con ``> 0`` --lo que hacia este script
+    antes-- convierte cada ambiguo en positivo: con el 94 % del AOI ambiguo,
+    el recall se calcularia contra una "verdad" que es casi todo el mapa. La
+    decodificacion es la misma que usa `scripts/evaluate.py`.
+
+    Parameters
+    ----------
+    ruta:
+        GeoTIFF de clases de la verdad de terreno.
+    forma_esperada:
+        Forma espacial (alto, ancho) del Scene.
+    validos:
+        Mascara de pixeles evaluables del mapa.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        (positivos, validos_verdad): la mascara de positivos y `validos` menos
+        los pixeles ambiguos o sin dato de la verdad.
+    """
+    try:
+        positivos, evaluables = decode_truth(_leer_mapa(ruta, forma_esperada))
+    except ValueError as e:
+        _abortar(f"{ruta}: {e}")
+    return positivos, validos & evaluables
+
+
 def _umbrales_del_barrido(
     mapa: np.ndarray, higher_is_better: bool
 ) -> tuple[np.ndarray, float]:
@@ -197,13 +231,22 @@ def _fila_del_barrido(
     validos: np.ndarray,
     verdad: np.ndarray | None,
     detector: Detector,
+    validos_verdad: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Metricas de un umbral. Las de E4 quedan vacias si no hay verdad.
 
     Los campos sin verdad de terreno se dejan como cadena vacia y no como 0 ni
     como None: un 0 en la columna F1 se lee como "el detector no acerto nada",
     que es una medicion, cuando lo que pasa es que no hubo con que medir.
+
+    Hay dos mascaras de validez y no son intercambiables. `validos` es el AOI
+    evaluable (sin nubes, sin NaN) y es el denominador de `pct_aoi_valido`.
+    `validos_verdad` es ese mismo AOI menos los pixeles que la verdad deja
+    ambiguos, y es el que tiene que usar E4: un ambiguo no es ni acierto ni
+    falsa alarma. None equivale a `validos`.
     """
+    if validos_verdad is None:
+        validos_verdad = validos
     # `detects()` y no un `<=` a mano: el detector es el que sabe en que
     # direccion apunta su puntaje. Comparar a mano es exactamente el bug que ese
     # metodo existe para evitar --un detector con higher_is_better=True daria
@@ -224,13 +267,13 @@ def _fila_del_barrido(
     }
 
     if verdad is not None:
-        pr = precision_recall(verdad, detectado, valid=validos)
+        pr = precision_recall(verdad, detectado, valid=validos_verdad)
         fila.update(
             precision=pr.precision,
             recall=pr.recall,
-            f1=f1_score(verdad, detectado, valid=validos),
-            iou=iou_score(verdad, detectado, valid=validos),
-            kappa=cohen_kappa(verdad, detectado, valid=validos),
+            f1=f1_score(verdad, detectado, valid=validos_verdad),
+            iou=iou_score(verdad, detectado, valid=validos_verdad),
+            kappa=cohen_kappa(verdad, detectado, valid=validos_verdad),
         )
 
     return fila
@@ -399,7 +442,8 @@ def _parsear_argumentos() -> argparse.Namespace:
         "--truth",
         default=None,
         help=(
-            "GeoTIFF booleano de verdad de terreno en la grilla del Scene. "
+            "GeoTIFF de verdad de terreno en la grilla del Scene (1 positivo, "
+            "0 negativo, 255 ambiguo; los ambiguos no se evaluan). "
             "Opcional: sin el, E3 y E4 quedan sin calcular y se dice cuales."
         ),
     )
@@ -450,10 +494,13 @@ def main() -> None:
     n_validos = int(np.count_nonzero(validos))
 
     verdad = None
+    validos_verdad = None
     if args.truth:
         if not os.path.exists(args.truth):
             _abortar(f"No existe la verdad de terreno en {args.truth}.")
-        verdad = _leer_mapa(args.truth, tuple(scene.cube.shape[1:])) > 0
+        verdad, validos_verdad = _leer_verdad(
+            args.truth, tuple(scene.cube.shape[1:]), validos
+        )
 
     umbral_config = float(
         config.algorithm.get("params", {}).get("angle_threshold_rad", float("nan"))
@@ -477,7 +524,10 @@ def main() -> None:
     print("=" * 72)
 
     umbrales, paso = _umbrales_del_barrido(mapa, detector.higher_is_better)
-    filas = [_fila_del_barrido(u, mapa, validos, verdad, detector) for u in umbrales]
+    filas = [
+        _fila_del_barrido(u, mapa, validos, verdad, detector, validos_verdad)
+        for u in umbrales
+    ]
     _imprimir_barrido(filas, paso, con_verdad=verdad is not None)
 
     ruta_csv = os.path.join(args.out_dir, "sweep_threshold.csv")
@@ -502,7 +552,7 @@ def main() -> None:
         _contrastar_con_lineas_base(mascara_sam, mapa_clay, validos, n_sam / n_validos)
 
     if verdad is not None:
-        _evaluar_contra_verdad(mapa, mascara_sam, validos, verdad, detector)
+        _evaluar_contra_verdad(mapa, mascara_sam, validos_verdad, verdad, detector)
     else:
         print(
             "\nE3 y E4 - SIN CALCULAR, BLOQUEADO POR TRACK A.\n"
