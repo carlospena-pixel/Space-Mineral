@@ -23,6 +23,7 @@ from rasterio.warp import Resampling, reproject
 
 from mineralmap.io.raster_io import Scene
 
+EMIT_FILL = -9999
 GLT_NODATA = 0
 
 
@@ -87,6 +88,53 @@ def read_emit_l2b_min(path: str) -> EmitL2BMin:
         library=library,
         attrs=attrs,
     )
+
+
+@dataclass
+class EmitL2ARfl:
+    """Metadatos de un EMIT_L2A_RFL_*.nc; la reflectancia se lee por trozos."""
+
+    path: str
+    shape: tuple[int, int, int]  # (downtrack, crosstrack, bandas)
+    wavelengths: np.ndarray  # nm
+    fwhm: np.ndarray  # nm
+    good: np.ndarray  # bool: False en las absorciones de agua y bandas malas
+    glt: np.ndarray
+    transform: Affine
+    crs: CRS
+
+
+def read_emit_l2a_meta(path: str) -> EmitL2ARfl:
+    """Lee longitudes de onda, FWHM, bandas buenas, GLT y georreferencia."""
+    with h5py.File(path, "r") as f:
+        sbp = f["sensor_band_parameters"]
+        return EmitL2ARfl(
+            path=path,
+            shape=tuple(f["reflectance"].shape),
+            wavelengths=sbp["wavelengths"][:].astype(np.float64),
+            fwhm=sbp["fwhm"][:].astype(np.float64),
+            good=sbp["good_wavelengths"][:] == 1,
+            glt=np.stack([f["location/glt_x"][:], f["location/glt_y"][:]], axis=-1),
+            transform=Affine.from_gdal(*[float(v) for v in f.attrs["geotransform"]]),
+            crs=CRS.from_wkt(_texto([f.attrs["spatial_ref"]])[0]),
+        )
+
+
+def iter_reflectance(path: str, bands: np.ndarray, filas_por_trozo: int = 128):
+    """Recorre la reflectancia por trozos de filas del sensor.
+
+    Devuelve (fila_inicio, fila_fin, cubo) con el cubo en forma
+    (n_bandas, filas, columnas), solo las `bands` pedidas (mascara booleana), y
+    NaN donde el producto trae su fill (-9999). Un trozo de 128 filas pesa
+    ~180 MB en float32: el cubo entero (1,8 GB) nunca se carga.
+    """
+    with h5py.File(path, "r") as f:
+        ds = f["reflectance"]
+        for r0 in range(0, ds.shape[0], filas_por_trozo):
+            r1 = min(r0 + filas_por_trozo, ds.shape[0])
+            trozo = ds[r0:r1, :, :][:, :, bands].astype(np.float32)
+            trozo[trozo == EMIT_FILL] = np.nan
+            yield r0, r1, np.transpose(trozo, (2, 0, 1))
 
 
 def apply_glt(

@@ -1,0 +1,112 @@
+# Pistas minerales sobre Cerro Colorado: un mapa por mineral y por zona de
+# alteracion de un porfido.
+#
+# Dos fuentes:
+#   - EMIT L2B (identificacion de minerales): puntaje = profundidad de banda
+#     donde el mineral identificado esta en la lista, 0 si hay dato pero otro
+#     mineral, NaN sin dato. Mayor es mejor. Igual que configs/emit_cerro_colorado.yaml.
+#   - SAM sobre la reflectancia EMIT L2A, para minerales que L2B no trae como
+#     centrales. Puntaje = angulo, menor es mejor.
+#
+# CRITERIO DE LAS LISTAS L2B. Entra el mineral puro y las mezclas donde ese
+# mineral es al menos la mitad segun el nombre de la muestra. Excepciones:
+#   - Oxidos de hierro: en mezclas con cuarzo (espectralmente neutro en esas
+#     longitudes de onda) cuenta el oxido de hierro dominante.
+#   - Fuera las muestras de laboratorio contaminadas con solventes
+#     (organic_*+montswy), aunque una tenga muchos pixeles: no son superficies
+#     naturales y su firma mezcla rasgos organicos.
+# Cada mineral usa UN grupo de absorcion: arcillas, micas, cloritas y
+# carbonatos en el grupo 2 (~2,0-2,5 um); goethita y hematita en el grupo 1
+# (~1 um). Las listas son un juicio y estan para revisarse.
+
+emit_l2b:
+  min_file: data/raw/emit/EMIT_L2B_MIN_002_20240716T190259.nc
+  minerales:
+    caolinita:
+      grupo: 2
+      entradas: [kaolgrp_kaolinite_wxl, kaolgrp_kaolinite_pxl, kaolgrp_halloysite,
+                 kaolgrp_nacrite, kaolgrp_dickite, kaolin.5+smect.5,
+                 kaolin.5+muscov.medAl, kaolin.5+muscov.medhighAl, kaolin+musc.intimat]
+    sericita:  # illita + muscovita
+      grupo: 2
+      entradas: [micagrp_illite, micagrp_illite.gds4, micagrp_muscovite-low-Al,
+                 micagrp_muscovite-med-Al, micagrp_muscovite-medhigh-Al,
+                 micagrp_muscoviteFerich, musc+pyroph, musc+jarosite.intimat,
+                 muscovite+chlorite]
+    montmorillonita:
+      grupo: 2
+      entradas: [smectite_montmorillonite_na_highswelling,
+                 smectite_montmorillonite_fe_swelling,
+                 smectite_montmorillonite_ca_swelling,
+                 smectite_beidellite_gds123, smectite_beidellite_gds124,
+                 kaolin.3+smect.7]
+      # Fuera: nontronita (esmectita de Fe, otra especie), mezclas dominadas
+      # por calcita o dolomita, y organic_trichlor+montswy (16.757 px en la
+      # escena) y demas muestras con solventes.
+    clorita:
+      grupo: 2
+      entradas: [chlorite, chlorite-skarn, chlorite_clinochlore,
+                 chlorite_clinochlore.nmnh83369, chlorite_clinochlore.fe.gds157,
+                 chlorite_clinochlore.fe.sc-cca-1, chlorite_thuringite,
+                 chlorite_cookeite-car-1.a, chlorite_cookeite-car-1.c,
+                 prehnite+.50chlorite, prehnite+.67chlorite, prehnite+.75chlorite]
+      # Fuera: muscovite+chlorite (muscovita primero, va en sericita) y las
+      # cloritas del grupo 1 (rasgo Fe2+ ~1 um, otro grupo).
+    calcita:
+      grupo: 2
+      entradas: [carbonate_calcite, carbonate_calcite+dolomite.5,
+                 calcite+0.2Na-mont, carbonate_calcite+0.2Ca-mont,
+                 calcite+0.5Ca-mont, carbonate_calcite+0.3muscovite,
+                 carbonate_calcite+0.2kaolwxl, carbonate_calcite0.7+kaol0.3]
+      # Fuera: calcite.33+kaol.33+mus (33 %), mezclas de 25 % y talc+calcite.
+    goethita:
+      grupo: 1
+      entradas: [fe3+_goethite.medgr.ws222, fe3+_goethite+qtz.medgr.gds240,
+                 fe3+_goethite.fingr.mpcma2, fe3+_goethite.medcoarsegr.mpcma2,
+                 fe3+_goethite.coarsegr.ws222, fe3+_goethite.thincoat,
+                 fe2+_goeth+musc, fe3+_goethite.nano-70nm, fe3+_goethite.nano0.5+qtz,
+                 fe3+_hematite.1+goethite.9hg1, fe3+_hematite.2+goethite.8hg2,
+                 fe3+_hematite.3+goethite.7hg3, fe3+_hematite.1+goeth.4+qtz]
+      # Fuera: lepidocrocita (otro polimorfo) y fe2+fe3+_chlor+goeth (clorita primero).
+    hematita:
+      grupo: 1
+      entradas: [fe3+_hematite.fine.gr.gds76, fe3+_hematite.med.gr.gds27,
+                 fe3+_hematite.thincoat, fe3+_hematite.fine.gr.fe2602,
+                 fe3+_hematite.fine.gr.ws161, fe3+_hematite.lg.gr.br25a,
+                 fe3+_hematite.med.gr.br25b, fe3+_hematite.lg.gr.br25c,
+                 fe3+_hematite.nano.BR34b2, fe3+_hematite.nano.BR34b2b,
+                 fe3+_hematite.lg.gr.br34c, fe3+_hematite.nano.KP58610,
+                 fe3+_hematite.nano-0.3+qtz, fe3+_hematite-nano+goethite-fg-amix,
+                 fe3+_hematite.4+goeth.1+qtz]
+      # Fuera: magnetita de skarn y basalto meteorizado.
+
+emit_sam:
+  rfl_file: data/raw/emit/EMIT_L2A_RFL_002_20240716T190259.nc
+  # splib07b (muestreo fino), solo mediciones Beckman (BECK) de mineral puro,
+  # como la caolinita CM9 del repo. Elegidas por Camila el 2026-11-12.
+  longitudes_de_onda: data/external/splib07b_Wavelengths_BECK_Beckman_interp._3961_ch.txt
+  minerales:
+    caolinita:
+      firma: data/external/splib07b_Kaolinite_CM9_BECKb_AREF.txt
+    alunita:
+      firma: data/external/splib07b_Alunite_GDS84_Na03_BECKa_AREF.txt  # K (3 % Na)
+    pirofilita:
+      firma: data/external/splib07b_Pyrophyllite_PYS1A_fine_gr_BECKa_AREF.txt
+    jarosita:
+      firma: data/external/splib07b_Jarosite_JR2501_(K)_BECKb_AREF.txt  # K, natural
+    epidota:
+      firma: data/external/splib07b_Epidote_GDS26.a_75-200um_BECKb_AREF.txt
+
+scene: data/interim/scene.npz
+salida: outputs/maps/pistas/
+
+zonas:
+  # Para juntar minerales con unidades distintas (profundidad de banda y
+  # angulo), cada mapa se lleva a su rango percentil dentro de los pixeles con
+  # dato (0 = peor, 1 = mejor, en la direccion de cada mapa) y la zona es el
+  # maximo de sus minerales: basta una pista fuerte para marcar el pixel.
+  argilica: [caolinita, montmorillonita]
+  filica: [sericita]
+  argilica_avanzada: [alunita, pirofilita]
+  propilitica: [clorita, epidota, calcita]
+  oxidos: [goethita, hematita, jarosita]

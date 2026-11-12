@@ -1,0 +1,54 @@
+# Validacion por tipo de roca: dejar una familia de positivos fuera.
+#
+# En cada vuelta, los bloques de 5 km que contienen positivos de la familia
+# dejada fuera son la prueba: se miden esos positivos contra los negativos de
+# esos mismos bloques. Se entrena con todos los demas bloques. Asi ninguna
+# familia aparece en entrenamiento y prueba a la vez, y los negativos de prueba
+# tampoco se vieron al entrenar.
+#
+# Usa TODO el AOI, incluidos los 13 bloques de la prueba final de
+# configs/modelos_cerro_colorado.yaml: riolitos y dacitos viven sobre todo ahi.
+# Esos bloques se usan para MEDIR, no para elegir nada (decision de Camila,
+# 2026-11-12).
+
+semilla: 42
+scene: data/interim/scene.npz
+verdad: outputs/maps/ground_truth.tif
+bloque_px: 250
+
+familias:
+  yabricoya:
+    - Porfidos hipabisales dacíticos del Complejo Yabricoya
+    - Porfidos tonaliticos-granodioriticos La Planada del Complejo Yabricoya
+    - Brechas hidrotermales de turmalina del Complejo Yabricoya
+  rioliticos:
+    - Porfidos y domos intrusivos rioliticos del Cretácico Superior
+  daciticos_cretacico_superior:
+    - Porfido daciticos del Cretacico Superior
+    - Porfido daciticos y riodaciticos del Cretacico Superior alto-Paleoceno Inferior
+  cerro_colorado:
+    - Complejo intrusivo Cerro Colorado, monzodiorita cuarcifera
+    - Complejo intrusivo Cerro Colorado, brechas intrusivas
+
+# Una familia se reporta con numero solo si tiene al menos estos pixeles
+# positivos de prueba Y aparece en al menos este numero de bloques distintos:
+# una familia en un solo bloque no se puede separar de ese bloque.
+minimo:
+  pixeles: 500
+  bloques: 2
+
+muestreo:
+  max_positivos: 4000
+  max_negativos: 12000
+
+# Hiperparametros fijos: los que eligio la validacion cruzada de feat/modelos
+# (outputs/metrics/modelos/resumen_cv.json). No se ajustan aca.
+modelos:
+  logistica: {C: 1.0}
+  random_forest: {min_samples_leaf: 20}
+  svm: {C: 1.0}
+
+# Pistas EMIT que se suman a Sentinel-2 en el juego de entradas (b).
+pistas_dir: outputs/maps/pistas/
+sam_s2: outputs/maps/kaolinite_sam_angle.tif
+sam_emit: outputs/maps/pistas/emit_sam_caolinita.tif
