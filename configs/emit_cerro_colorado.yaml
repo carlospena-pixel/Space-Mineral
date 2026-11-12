@@ -1,0 +1,75 @@
+# EMIT L2B (identificacion de minerales) sobre el AOI de Cerro Colorado.
+#
+# Producto: EMITL2BMIN V002 (concept ID C4079846859-LPCLOUD), la version vigente
+# en LP DAAC. La V001 (C2408034484-LPCLOUD) dejo de recibir datos el 2026-08-31.
+#
+# QUE TRAE EL PRODUCTO. No hay un mapa por mineral. Hay dos grupos de absorcion,
+# y para cada uno `group_N_mineral_id` (el espectro de la biblioteca que mejor
+# calza con el pixel, como `index` de `mineral_metadata`) y `group_N_band_depth`
+# (profundidad de esa absorcion, sin unidades). En V002 las arcillas y micas
+# (caolinita, illita, muscovita) estan en el GRUPO 2. El ID 0 significa "sin
+# identificacion" y trae band_depth 0.
+#
+# PUNTAJE. Para un conjunto de entradas de la biblioteca, el puntaje de un pixel
+# es su band_depth si el mineral identificado esta en el conjunto, 0 si el pixel
+# tiene dato pero otro mineral (o ninguno), y NaN si EMIT no lo cubre. Mayor es
+# mejor.
+#
+# ADVERTENCIA: igual que en verdad_terreno_cerro_colorado.yaml, que entradas
+# cuentan como "caolinita" es un juicio, no un dato del producto. Las listas
+# usan `path_name` (campo `name` de mineral_metadata) y no el `index`, porque el
+# index podria cambiar entre versiones de la biblioteca; el script aborta si un
+# nombre no existe o se repite en el grupo.
+#
+# CRITERIO. Entra el mineral puro y las mezclas de la biblioteca donde ese
+# mineral es al menos la mitad (segun el nombre de la muestra). Queda fuera lo
+# que el nombre declara dominado por otra cosa.
+
+emit:
+  granule: EMIT_L2B_MIN_002_20240716T190259
+  min_file: data/raw/emit/EMIT_L2B_MIN_002_20240716T190259.nc
+  uncert_file: data/raw/emit/EMIT_L2B_MINUNCERT_002_20240716T190259.nc
+  grupo: 2
+
+scene: data/interim/scene.npz
+
+mapas:
+  caolinita:
+    salida: outputs/maps/emit_kaolinite_band_depth.tif
+    descripcion_banda: emit_l2b_v002_band_depth_kaolinite_group
+    entradas:
+      - kaolgrp_kaolinite_wxl        # Kaolinite CM9 (bien cristalizada)
+      - kaolgrp_kaolinite_pxl        # Kaolinite KGa-2 (mal cristalizada)
+      - kaolgrp_halloysite           # grupo de la caolinita
+      - kaolgrp_nacrite              # grupo de la caolinita
+      - kaolgrp_dickite              # grupo de la caolinita
+      - kaolin.5+smect.5             # 50 % caolinita
+      - kaolin.5+muscov.medAl        # 50 % caolinita
+      - kaolin.5+muscov.medhighAl    # 50 % caolinita
+      - kaolin+musc.intimat          # caolinita nombrada primero
+    # Fuera a proposito:
+    #   kaolin.3+smect.7                     solo 30 % caolinita
+    #   sulfate+kaolingrp_natroalun+dickite  dominada por alunita
+
+  alteracion:
+    salida: outputs/maps/emit_alteration_band_depth.tif
+    descripcion_banda: emit_l2b_v002_band_depth_kaolinite_illite_muscovite
+    # Todo lo de `caolinita` mas illita y muscovita.
+    incluye: caolinita
+    entradas:
+      - micagrp_illite               # Illite IMt-1
+      - micagrp_illite.gds4          # Illite GDS4
+      - micagrp_muscovite-low-Al
+      - micagrp_muscovite-med-Al
+      - micagrp_muscovite-medhigh-Al
+      - micagrp_muscoviteFerich
+      - musc+pyroph                  # muscovita nombrada primero
+      - musc+jarosite.intimat        # muscovita nombrada primero
+      - muscovite+chlorite           # muscovita nombrada primero
+    # Fuera a proposito:
+    #   pyroph+tr.musc                         pirofilita con trazas de muscovita
+    #   sulfate-mix_gypsum+jar+illite.intmix   dominada por yeso
+    #   carbonate_calcite+0.3muscovite         dominada por calcita
+    #   prehnite+muscovite                     prehnita nombrada primero
+    #   micagrp_illite.roscoelite              roscoelita (mica de vanadio)
+    #   smectite_ammonillsmec                  la biblioteca la clasifica como esmectita
