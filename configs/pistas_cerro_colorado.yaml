@@ -84,18 +84,18 @@ emit_sam:
   rfl_file: data/raw/emit/EMIT_L2A_RFL_002_20240716T190259.nc
   # splib07b (muestreo fino), solo mediciones Beckman (BECK) de mineral puro,
   # como la caolinita CM9 del repo. Elegidas por Camila el 2026-11-12.
-  longitudes_de_onda: data/external/splib07b_Wavelengths_BECK_Beckman_interp._3961_ch.txt
+  longitudes_de_onda: data/external/splib07b/splib07b_Wavelengths_BECK_Beckman_interp._3961_ch.txt
   minerales:
     caolinita:
-      firma: data/external/splib07b_Kaolinite_CM9_BECKb_AREF.txt
+      firma: data/external/splib07b/splib07b_Kaolinite_CM9_BECKb_AREF.txt
     alunita:
-      firma: data/external/splib07b_Alunite_GDS84_Na03_BECKa_AREF.txt  # K (3 % Na)
+      firma: data/external/splib07b/splib07b_Alunite_GDS84_Na03_BECKa_AREF.txt  # K (3 % Na)
     pirofilita:
-      firma: data/external/splib07b_Pyrophyllite_PYS1A_fine_gr_BECKa_AREF.txt
+      firma: data/external/splib07b/splib07b_Pyrophyllite_PYS1A_fine_gr_BECKa_AREF.txt
     jarosita:
-      firma: data/external/splib07b_Jarosite_JR2501_(K)_BECKb_AREF.txt  # K, natural
+      firma: data/external/splib07b/splib07b_Jarosite_JR2501_(K)_BECKb_AREF.txt  # K, natural
     epidota:
-      firma: data/external/splib07b_Epidote_GDS26.a_75-200um_BECKb_AREF.txt
+      firma: data/external/splib07b/splib07b_Epidote_GDS26.a_75-200um_BECKb_AREF.txt
 
 scene: data/interim/scene.npz
 salida: outputs/maps/pistas/

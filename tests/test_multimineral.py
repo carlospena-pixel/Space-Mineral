@@ -6,7 +6,7 @@ import pytest
 
 from mineralmap.algorithms.sam import SAM
 from mineralmap.spectral.pistas import combine_zone, percentile_rank
-from mineralmap.spectral.resample import resample_to_bands
+from mineralmap.spectral.resample import load_splib_signature, resample_to_bands
 from mineralmap.validation.familias import block_ids, is_evaluable, leave_one_family_out
 
 # --- remuestreo -------------------------------------------------------------
@@ -38,6 +38,19 @@ def test_remuestreo_suaviza_un_rasgo_angosto_segun_el_fwhm():
     angosta = resample_to_bands(wl, firma, np.array([2200.0]), np.array([2.0]))[0]
     ancha = resample_to_bands(wl, firma, np.array([2200.0]), np.array([20.0]))[0]
     assert angosta < ancha < 1.0
+
+
+def test_lector_splib_convierte_micrometros_y_nodata(tmp_path):
+    firma = tmp_path / "firma.txt"
+    lambdas = tmp_path / "lambdas.txt"
+    firma.write_text("splib07b Record=1: X\n-1.2300000e+034\n0.5\n0.6\n")
+    lambdas.write_text("splib07b Record=2: W\n0.400\n0.401\n0.402\n")
+    wl, v = load_splib_signature(str(firma), str(lambdas))
+    np.testing.assert_allclose(wl, [400.0, 401.0, 402.0])
+    assert np.isnan(v[0]) and v[1] == pytest.approx(0.5)
+    (tmp_path / "corta.txt").write_text("h\n0.400\n0.401\n")
+    with pytest.raises(ValueError):
+        load_splib_signature(str(firma), str(tmp_path / "corta.txt"))
 
 
 def test_remuestreo_rechaza_fwhm_no_positivo():

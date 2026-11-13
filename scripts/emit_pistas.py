@@ -35,8 +35,7 @@ from mineralmap.io.emit import (
 from mineralmap.io.raster_io import load_scene, write_geotiff
 from mineralmap.spectral.emit_scores import band_depth_score, resolve_library_ids
 from mineralmap.spectral.pistas import combine_zone, percentile_rank
-from mineralmap.spectral.resample import resample_to_bands
-from mineralmap.spectral.usgs_library import load_usgs_wavelengths
+from mineralmap.spectral.resample import load_splib_signature, resample_to_bands
 
 RUTA_CONFIG = "configs/pistas_cerro_colorado.yaml"
 
@@ -65,8 +64,7 @@ def paso_l2b(cfg: dict, scene, salida: Path) -> None:
 
 def firma_en_emit(ruta_firma: str, ruta_lambdas: str, meta) -> np.ndarray:
     """Firma splib07b remuestreada a las bandas EMIT (gaussiana con su FWHM)."""
-    lambdas = load_usgs_wavelengths(ruta_lambdas)  # nm
-    valores = np.loadtxt(ruta_firma, skiprows=1)
+    lambdas, valores = load_splib_signature(ruta_firma, ruta_lambdas)  # nm
     return resample_to_bands(lambdas, valores, meta.wavelengths, meta.fwhm)
 
 

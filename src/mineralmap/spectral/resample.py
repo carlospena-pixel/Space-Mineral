@@ -17,6 +17,41 @@ import numpy as np
 USGS_NODATA_LIMITE = -1e30
 
 
+def load_splib_ascii(path: str) -> np.ndarray:
+    """Lee un ASCIIdata de splib07 de cualquier largo (encabezado + un valor por
+    linea). El "no dato" de USGS (-1.23e34) sale NaN.
+
+    Sirve para firmas y para archivos de longitudes de onda de cualquier
+    instrumento; `usgs_library.load_usgs_wavelengths` en cambio esta atado a
+    las 13 posiciones de rsSentinel2.
+    """
+    valores = np.loadtxt(path, skiprows=1, dtype=np.float64, ndmin=1)
+    valores[valores < USGS_NODATA_LIMITE] = np.nan
+    return valores
+
+
+def load_splib_signature(firma_path: str, lambdas_path: str) -> tuple[np.ndarray, np.ndarray]:
+    """Firma splib07b y sus longitudes de onda en nm.
+
+    Raises
+    ------
+    ValueError
+        Si firma y longitudes de onda no tienen el mismo numero de canales (son
+        de instrumentos distintos), o si las longitudes de onda no parecen
+        micrometros.
+    """
+    valores = load_splib_ascii(firma_path)
+    lambdas_um = load_splib_ascii(lambdas_path)
+    if valores.size != lambdas_um.size:
+        raise ValueError(
+            f"{firma_path} trae {valores.size} canales y {lambdas_path} "
+            f"{lambdas_um.size}: son de instrumentos distintos."
+        )
+    if np.nanmax(lambdas_um) > 300:
+        raise ValueError(f"{lambdas_path} no parece estar en micrometros.")
+    return lambdas_um * 1000.0, valores
+
+
 def resample_to_bands(
     lib_wavelengths_nm: np.ndarray,
     lib_values: np.ndarray,
