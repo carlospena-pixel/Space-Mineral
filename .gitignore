@@ -16,6 +16,15 @@ data/external/geologia/*
 !data/external/geologia/*.geojson
 !data/external/geologia/*.md
 
+# data/external/splib07b/ son las firmas USGS splib07b de muestreo fino (y sus
+# longitudes de onda Beckman) que se remuestrean a las bandas de EMIT. Van en
+# su propia carpeta y no sueltas en data/external/: tests/test_endmembers.py
+# busca ahi cualquier .txt con "wavelength" en el nombre y espera el archivo
+# de 13 bandas de rsSentinel2, no el de 3961 canales del Beckman.
+!data/external/splib07b/
+data/external/splib07b/*
+!data/external/splib07b/*.txt
+
 # Python
 __pycache__/
 *.py[cod]

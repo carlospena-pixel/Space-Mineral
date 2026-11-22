@@ -1,0 +1,63 @@
+# Comparacion de familias de algoritmos (Charter V3, seccion 5.1) en Cerro Colorado.
+#
+# Todo lo que decide la comparacion vive aca: la semilla, la particion espacial,
+# el muestreo y la grilla de hiperparametros. Nada se elige mirando la PRUEBA
+# FINAL: los bloques de `prueba_final` quedan en NaN en todos los mapas de la
+# comparacion y solo se usan una vez, con el ganador.
+
+semilla: 42
+
+scene: data/interim/scene.npz
+verdad: outputs/maps/ground_truth.tif
+mineral: kaolinite
+
+bloques:
+  # 5 km = 250 px de 20 m; 8 x 8 = 64 bloques. id = fila * 8 + columna,
+  # fila 0 al norte y columna 0 al oeste.
+  tamano_px: 250
+  # Elegidos con una regla fija ANTES de entrenar nada: con semilla 42 se
+  # sortean 4 bloques entre los 17 que tienen positivos y se acepta el primer
+  # sorteo con 15-25 % de los positivos y al menos 3 unidades positivas
+  # distintas (salio al primer intento: 5, 17, 21, 23 -> 9.137 positivos,
+  # 18,0 %, 5 unidades). Se suma el 20 % de los bloques sin positivos, tambien
+  # sorteado. Sin franja de separacion: los bloques de prueba tocan bloques de
+  # entrenamiento, y eso es una limitacion declarada.
+  prueba_final: [5, 17, 21, 23, 4, 15, 36, 43, 49, 50, 51, 53, 58]
+
+validacion_cruzada:
+  # StratifiedGroupKFold: los grupos son los bloques (ningun bloque aparece en
+  # entrenamiento y validacion a la vez) y reparte los positivos entre folds.
+  n_folds: 5
+
+muestreo:
+  # Pixeles de entrenamiento por fold, sorteados con la semilla. Lo mismo para
+  # todos los modelos supervisados, para que la comparacion sea pareja y SVM
+  # corra en minutos.
+  max_positivos: 4000
+  max_negativos: 12000
+
+umbral:
+  # evaluate.py necesita un umbral para el enriquecimiento. Regla comun a todos
+  # los mapas: marcar el 10 % mejor puntuado de los pixeles evaluables de la
+  # validacion cruzada (la misma fraccion que usa --top-fraction por defecto).
+  fraccion_top: 0.10
+
+hiperparametros:
+  logistica: {C: [0.1, 1.0]}
+  knn: {k: [5, 15, 31]}
+  svm: {C: [1.0, 10.0]}
+  random_forest: {min_samples_leaf: [1, 20]}
+  hist_gradient_boosting: {learning_rate: [0.05, 0.1]}
+  xgboost: {max_depth: [4, 6]}
+
+fcls:
+  # Componentes ademas de la caolinita (que sale de ENDMEMBERS). Archivos
+  # ASCIIdata de USGS splib07, remuestreados a Sentinel-2 (rsSentinel2), en
+  # data/external/ (extraidos de ASCIIdata_splib07b_rsSentinel2.zip). Una
+  # muestra por componente: firmas parecidas entre si vuelven inestable el
+  # reparto de proporciones. Las dos son de laboratorio (BECK), como la
+  # caolinita CM9.
+  componentes:
+    barniz: data/external/S07SNTL2_Desert_Varnish_GDS78A_Rhy_BECKa_AREF.txt
+    arena: data/external/S07SNTL2_Quartz_GDS74_Sand_Ottawa_BECKc_AREF.txt
+  sombra: true  # agrega un componente de reflectancia cero
