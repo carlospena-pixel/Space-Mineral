@@ -83,7 +83,7 @@ emit_l2b:
 emit_sam:
   rfl_file: data/raw/emit/EMIT_L2A_RFL_002_20240716T190259.nc
   # splib07b (muestreo fino), solo mediciones Beckman (BECK) de mineral puro,
-  # como la caolinita CM9 del repo. Elegidas por Camila el 2026-11-12.
+  # como la caolinita CM9 del repo.
   longitudes_de_onda: data/external/splib07b/splib07b_Wavelengths_BECK_Beckman_interp._3961_ch.txt
   minerales:
     caolinita:

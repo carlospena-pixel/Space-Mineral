@@ -79,7 +79,9 @@ def leave_one_family_out(
     neg = (v == 0) & valido
     sin_familia = pos & (familia == 0)
     if sin_familia.any():
-        raise ValueError(f"{int(sin_familia.sum())} positivos no tienen familia asignada.")
+        raise ValueError(
+            f"{int(sin_familia.sum())} positivos no tienen familia asignada."
+        )
 
     salida = []
     for codigo, nombre in nombres.items():
@@ -87,16 +89,22 @@ def leave_one_family_out(
         bloques_f = sorted(np.unique(bloques[de_f]).tolist())
         en_prueba = np.isin(bloques, bloques_f)
         entrenamiento = (pos | neg) & ~en_prueba
-        salida.append(FamilySplit(
-            familia=nombre,
-            bloques_prueba=bloques_f,
-            entrenamiento=entrenamiento,
-            prueba_pos=de_f,
-            prueba_neg=neg & en_prueba,
-        ))
+        salida.append(
+            FamilySplit(
+                familia=nombre,
+                bloques_prueba=bloques_f,
+                entrenamiento=entrenamiento,
+                prueba_pos=de_f,
+                prueba_neg=neg & en_prueba,
+            )
+        )
     return salida
 
 
 def is_evaluable(split: FamilySplit, min_pixeles: int, min_bloques: int) -> bool:
     """Suficientes positivos y replica espacial para reportar un AUC."""
-    return split.n_pos >= min_pixeles and len(split.bloques_prueba) >= min_bloques and split.n_neg > 0
+    return (
+        split.n_pos >= min_pixeles
+        and len(split.bloques_prueba) >= min_bloques
+        and split.n_neg > 0
+    )

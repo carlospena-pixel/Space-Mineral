@@ -50,16 +50,25 @@ def paso_l2b(cfg: dict, scene, salida: Path) -> None:
     for mineral, m in cfg["emit_l2b"]["minerales"].items():
         g = int(m["grupo"])
         if g not in cache:
-            cache[g] = (apply_glt(emit.mineral_id[g], emit.glt), apply_glt(emit.band_depth[g], emit.glt))
+            cache[g] = (
+                apply_glt(emit.mineral_id[g], emit.glt),
+                apply_glt(emit.band_depth[g], emit.glt),
+            )
         ids = resolve_library_ids(emit.library, m["entradas"], g)
         puntaje = band_depth_score(*cache[g], ids)
         mapa = reproject_to_scene(puntaje, emit.transform, emit.crs, scene)
         ruta = salida / f"emit_l2b_{mineral}.tif"
-        write_geotiff(str(ruta), mapa, scene,
-                      band_descriptions=[f"emit_l2b_band_depth_{mineral}_higher_is_better"])
-        print(f"L2B {mineral:16s} grupo {g} | {len(ids):2d} entradas | "
-              f"puntaje > 0 en {100 * np.nanmean(mapa > 0):.2f} % del AOI con dato | "
-              f"{_cobertura(mapa)} -> {ruta}")
+        write_geotiff(
+            str(ruta),
+            mapa,
+            scene,
+            band_descriptions=[f"emit_l2b_band_depth_{mineral}_higher_is_better"],
+        )
+        print(
+            f"L2B {mineral:16s} grupo {g} | {len(ids):2d} entradas | "
+            f"puntaje > 0 en {100 * np.nanmean(mapa > 0):.2f} % del AOI con dato | "
+            f"{_cobertura(mapa)} -> {ruta}"
+        )
 
 
 def firma_en_emit(ruta_firma: str, ruta_lambdas: str, meta) -> np.ndarray:
@@ -71,7 +80,9 @@ def firma_en_emit(ruta_firma: str, ruta_lambdas: str, meta) -> np.ndarray:
 def paso_sam(cfg: dict, scene, salida: Path) -> None:
     sam_cfg = cfg["emit_sam"]
     if not sam_cfg.get("minerales"):
-        print("SAM sobre EMIT omitido: faltan las firmas splib07b en emit_sam.minerales.")
+        print(
+            "SAM sobre EMIT omitido: faltan las firmas splib07b en emit_sam.minerales."
+        )
         return
     meta = read_emit_l2a_meta(sam_cfg["rfl_file"])
     firmas = {}
@@ -79,7 +90,10 @@ def paso_sam(cfg: dict, scene, salida: Path) -> None:
         firma = firma_en_emit(m["firma"], sam_cfg["longitudes_de_onda"], meta)
         usar = meta.good & np.isfinite(firma)
         firmas[mineral] = (firma, usar)
-        print(f"SAM {mineral:16s} {m['firma']} | bandas usadas {int(usar.sum())} de {usar.size}")
+        print(
+            f"SAM {mineral:16s} {m['firma']} | "
+            f"bandas usadas {int(usar.sum())} de {usar.size}"
+        )
     # Una sola mascara de bandas para leer el archivo una vez: la union de las
     # buenas; cada firma usa su propio subconjunto dentro del trozo.
     leer = np.any([u for _, u in firmas.values()], axis=0)
@@ -93,8 +107,12 @@ def paso_sam(cfg: dict, scene, salida: Path) -> None:
     for mineral, mapa_sensor in mapas.items():
         orto = apply_glt(mapa_sensor, meta.glt)
         mapa = reproject_to_scene(orto, meta.transform, meta.crs, scene)
-        destino = sam_cfg["minerales"][mineral].get("salida") or str(salida / f"emit_sam_{mineral}.tif")
-        write_geotiff(destino, mapa, scene, band_descriptions=[f"sam_angle_rad_{mineral}_emit"])
+        destino = sam_cfg["minerales"][mineral].get("salida") or str(
+            salida / f"emit_sam_{mineral}.tif"
+        )
+        write_geotiff(
+            destino, mapa, scene, band_descriptions=[f"sam_angle_rad_{mineral}_emit"]
+        )
         print(f"SAM {mineral:16s} {_cobertura(mapa)} -> {destino}")
 
 
@@ -102,11 +120,15 @@ def paso_zonas(cfg: dict, scene, salida: Path) -> None:
     for zona, minerales in cfg["zonas"].items():
         rangos, usados = [], []
         for mineral in minerales:
-            for ruta, mayor in ((salida / f"emit_l2b_{mineral}.tif", True),
-                                (salida / f"emit_sam_{mineral}.tif", False)):
+            for ruta, mayor in (
+                (salida / f"emit_l2b_{mineral}.tif", True),
+                (salida / f"emit_sam_{mineral}.tif", False),
+            ):
                 if ruta.exists():
                     with rasterio.open(ruta) as src:
-                        rangos.append(percentile_rank(src.read(1).astype(np.float64), mayor))
+                        rangos.append(
+                            percentile_rank(src.read(1).astype(np.float64), mayor)
+                        )
                     usados.append(ruta.stem)
         faltan = [m for m in minerales if not any(m in u for u in usados)]
         if not rangos:
@@ -114,16 +136,26 @@ def paso_zonas(cfg: dict, scene, salida: Path) -> None:
             continue
         mapa = combine_zone(rangos)
         ruta = salida / f"zona_{zona}.tif"
-        write_geotiff(str(ruta), mapa, scene, band_descriptions=[f"zona_{zona}_rank_higher_is_better"])
+        write_geotiff(
+            str(ruta),
+            mapa,
+            scene,
+            band_descriptions=[f"zona_{zona}_rank_higher_is_better"],
+        )
         print(f"Zona {zona:18s} usa {usados} | faltan {faltan or 'ninguno'} -> {ruta}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--config", default=RUTA_CONFIG)
-    parser.add_argument("--pasos", nargs="+", default=["l2b", "sam", "zonas"],
-                        choices=["l2b", "sam", "zonas"])
+    parser.add_argument(
+        "--pasos",
+        nargs="+",
+        default=["l2b", "sam", "zonas"],
+        choices=["l2b", "sam", "zonas"],
+    )
     args = parser.parse_args()
     with open(args.config, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -131,7 +163,9 @@ def main() -> None:
     salida = Path(cfg["salida"])
     salida.mkdir(parents=True, exist_ok=True)
     for paso in args.pasos:
-        {"l2b": paso_l2b, "sam": paso_sam, "zonas": paso_zonas}[paso](cfg, scene, salida)
+        {"l2b": paso_l2b, "sam": paso_sam, "zonas": paso_zonas}[paso](
+            cfg, scene, salida
+        )
 
 
 if __name__ == "__main__":

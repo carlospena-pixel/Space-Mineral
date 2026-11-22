@@ -30,7 +30,9 @@ class SID(Detector):
                 f"{cube.shape} y {reference.shape}."
             )
         if not np.isfinite(reference).all() or reference.sum() <= 0:
-            raise ValueError("La firma de referencia debe ser finita y de suma positiva.")
+            raise ValueError(
+                "La firma de referencia debe ser finita y de suma positiva."
+            )
 
         q = np.clip(reference, EPS, None)
         q = q / q.sum()

@@ -88,7 +88,9 @@ class SupervisedDetector(Detector):
             usar &= np.asarray(valid, dtype=bool).ravel()
         return self.fit_table(X[usar], etiquetas[usar].astype(int))
 
-    def predict(self, cube: np.ndarray, reference: np.ndarray | None = None) -> np.ndarray:
+    def predict(
+        self, cube: np.ndarray, reference: np.ndarray | None = None
+    ) -> np.ndarray:
         n, alto, ancho = cube.shape
         return self.score_table(cube.reshape(n, -1).T).reshape(alto, ancho)
 

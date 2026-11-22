@@ -34,8 +34,12 @@ pre-commit install
 # Correr un experimento: deja el GeoTIFF en outputs/maps/ y el heatmap en outputs/figures/
 python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml
 
-# Validar contra cartografía: todavía no, scripts/evaluate.py es andamiaje (etapa 9)
+# Validar contra cartografía
+python scripts/construir_verdad_terreno.py
+python scripts/evaluate.py --score outputs/maps/kaolinite_sam_angle.tif \n    --truth outputs/maps/ground_truth.tif --lower-is-better --threshold 0.1
 ```
+
+**Estado actual, datos necesarios y orden de los scripts: [CLAUDE.md](CLAUDE.md).**
 
 Los datos (`data/`) no se versionan; ver `docs/es/pipeline.md` para cómo obtenerlos.
 
@@ -180,24 +184,19 @@ y se contrastan además contra `scikit-learn` como oráculo independiente.
 El barrido de umbral y el contraste con líneas base se corren así:
 
 ```bash
-python scripts/sweep_threshold.py --config configs/tamarugal_kaolinite.yaml
+python scripts/sweep_threshold.py --config configs/cerro_colorado_kaolinite.yaml
 ```
 
-**Los tres criterios de validación, y cuál se puede cerrar hoy:**
+**Los tres criterios de validación:**
 
 | Criterio | Qué pregunta | Estado |
 |---|---|---|
-| E3 — enriquecimiento espacial | ¿Las detecciones caen en zonas de alteración documentadas? | **BLOQUEADO POR TRACK A** |
-| E4 — métricas contra verdad | ¿Cuántas detecciones son correctas? | **BLOQUEADO POR TRACK A** |
+| E3 — enriquecimiento espacial | ¿Las detecciones caen en zonas de alteración documentadas? | Medible con `evaluate.py` |
+| E4 — métricas contra verdad | ¿Cuántas detecciones son correctas? | Medible con `evaluate.py` |
 | E5 — contraste con líneas base | ¿La detección coincide con una segunda opinión más que el azar? | Medible |
 
-**E3 y E4 están bloqueados y no por falta de código.** Las funciones existen y
-están probadas con datos sintéticos; lo que no existe es la capa de verdad de
-terreno. `data/external/` solo contiene la firma USGS de caolinita y
-`validation/geology.py` sigue siendo dos `NotImplementedError` (Track A). Y hay
-un problema anterior a ese: el AOI es `T19KDT`, Pampa del Tamarugal, y la Carta
-Calama 1:50.000 que el plan original fijaba como verdad de terreno **no cubre
-ese cuadrante**. Implementar `geology.py` no lo resuelve solo.
+La verdad de terreno se genera con `scripts/construir_verdad_terreno.py`. Los
+resultados vigentes están en [CLAUDE.md](CLAUDE.md).
 
 `sweep_threshold.py` corre igual sin verdad de terreno: calcula lo que no la
 necesita y declara por nombre qué quedó sin medir. Las columnas de E4 del CSV
@@ -252,6 +251,8 @@ pre-commit install
 
 python scripts/run_pipeline.py --config configs/cerro_colorado_kaolinite.yaml
 ```
+
+**Current status, required data and script order: [CLAUDE.md](CLAUDE.md) (in Spanish).**
 
 `data/` is not versioned; see `docs/en/pipeline.md` for how to obtain it.
 
@@ -382,25 +383,19 @@ additionally checked against `scikit-learn` as an independent oracle.
 The threshold sweep and the baseline contrast are run with:
 
 ```bash
-python scripts/sweep_threshold.py --config configs/tamarugal_kaolinite.yaml
+python scripts/sweep_threshold.py --config configs/cerro_colorado_kaolinite.yaml
 ```
 
-**The three validation criteria, and which one can be closed today:**
+**The three validation criteria:**
 
 | Criterion | What it asks | Status |
 |---|---|---|
-| E3 — spatial enrichment | Do detections fall inside documented alteration zones? | **BLOCKED BY TRACK A** |
-| E4 — metrics against ground truth | How many detections are correct? | **BLOCKED BY TRACK A** |
+| E3 — spatial enrichment | Do detections fall inside documented alteration zones? | Measurable with `evaluate.py` |
+| E4 — metrics against ground truth | How many detections are correct? | Measurable with `evaluate.py` |
 | E5 — contrast against baselines | Does the detection agree with a second opinion more than chance? | Measurable |
 
-**E3 and E4 are blocked, and not for lack of code.** The functions exist and are
-tested against synthetic data; what does not exist is the ground-truth layer.
-`data/external/` only holds the USGS kaolinite signature and
-`validation/geology.py` is still two `NotImplementedError` (Track A). And there
-is a problem upstream of that: the AOI is `T19KDT`, Pampa del Tamarugal, and the
-Carta Calama 1:50,000 that the original plan named as ground truth **does not
-cover that quadrant**. Implementing `geology.py` does not resolve that on its
-own.
+Ground truth is built with `scripts/construir_verdad_terreno.py`. Current
+results are in [CLAUDE.md](CLAUDE.md).
 
 `sweep_threshold.py` runs anyway without ground truth: it computes what does not
 need it and names explicitly what was left unmeasured. The E4 columns of the CSV

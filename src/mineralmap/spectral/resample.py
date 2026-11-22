@@ -30,7 +30,9 @@ def load_splib_ascii(path: str) -> np.ndarray:
     return valores
 
 
-def load_splib_signature(firma_path: str, lambdas_path: str) -> tuple[np.ndarray, np.ndarray]:
+def load_splib_signature(
+    firma_path: str, lambdas_path: str
+) -> tuple[np.ndarray, np.ndarray]:
     """Firma splib07b y sus longitudes de onda en nm.
 
     Raises

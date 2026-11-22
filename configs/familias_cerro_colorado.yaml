@@ -8,8 +8,7 @@
 #
 # Usa TODO el AOI, incluidos los 13 bloques de la prueba final de
 # configs/modelos_cerro_colorado.yaml: riolitos y dacitos viven sobre todo ahi.
-# Esos bloques se usan para MEDIR, no para elegir nada (decision de Camila,
-# 2026-11-12).
+# Esos bloques se usan para MEDIR, no para elegir nada.
 
 semilla: 42
 scene: data/interim/scene.npz

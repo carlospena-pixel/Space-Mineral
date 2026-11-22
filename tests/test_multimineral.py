@@ -25,7 +25,9 @@ def test_remuestreo_ignora_el_nodata_usgs_y_deja_nan_sin_muestras():
     firma = np.full(wl.shape, 0.5)
     firma[30:71] = -1.23e34  # nodata de splib07 entre 430 y 470 nm: cubre los
     # +-3 sigma (~10,8 nm) de la gaussiana centrada en 450 nm
-    salida = resample_to_bands(wl, firma, np.array([420.0, 450.0, 900.0]), np.full(3, 8.5))
+    salida = resample_to_bands(
+        wl, firma, np.array([420.0, 450.0, 900.0]), np.full(3, 8.5)
+    )
     assert salida[0] == pytest.approx(0.5)
     assert np.isnan(salida[1])  # todo lo que cubre la gaussiana es nodata
     assert np.isnan(salida[2])  # fuera del rango de la firma
@@ -92,7 +94,9 @@ def _escena_familias():
 def test_ninguna_familia_aparece_en_entrenamiento_y_prueba_a_la_vez():
     verdad, familia, bloques = _escena_familias()
     nombres = {1: "A", 2: "B", 3: "C"}
-    splits = leave_one_family_out(verdad, familia, nombres, bloques, np.ones(verdad.shape, bool))
+    splits = leave_one_family_out(
+        verdad, familia, nombres, bloques, np.ones(verdad.shape, bool)
+    )
     assert [s.familia for s in splits] == ["A", "B", "C"]
     for s, codigo in zip(splits, nombres):
         de_f = (verdad == 1) & (familia == codigo)
@@ -106,8 +110,9 @@ def test_ninguna_familia_aparece_en_entrenamiento_y_prueba_a_la_vez():
 
 def test_familia_a_ocupa_dos_bloques_y_b_uno():
     verdad, familia, bloques = _escena_familias()
-    a, b, _ = leave_one_family_out(verdad, familia, {1: "A", 2: "B", 3: "C"}, bloques,
-                                   np.ones(verdad.shape, bool))
+    a, b, _ = leave_one_family_out(
+        verdad, familia, {1: "A", 2: "B", 3: "C"}, bloques, np.ones(verdad.shape, bool)
+    )
     assert a.bloques_prueba == [0, 10] and a.n_pos == 3
     assert is_evaluable(a, min_pixeles=3, min_bloques=2)
     assert not is_evaluable(b, min_pixeles=1, min_bloques=2)  # un solo bloque
@@ -117,8 +122,13 @@ def test_positivo_sin_familia_es_un_error():
     verdad, familia, bloques = _escena_familias()
     familia[0, 0] = 0
     with pytest.raises(ValueError):
-        leave_one_family_out(verdad, familia, {1: "A", 2: "B", 3: "C"}, bloques,
-                             np.ones(verdad.shape, bool))
+        leave_one_family_out(
+            verdad,
+            familia,
+            {1: "A", 2: "B", 3: "C"},
+            bloques,
+            np.ones(verdad.shape, bool),
+        )
 
 
 # --- zonas --------------------------------------------------------------------

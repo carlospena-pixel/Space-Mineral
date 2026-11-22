@@ -2,17 +2,29 @@ name: mineralmap
 channels:
   - conda-forge
 dependencies:
+  # Versiones fijas: son las que calcularon los resultados, y sin fijarlas conda
+  # no termina de resolver con Python 3.10.
   - python=3.10
-  - rasterio
-  - gdal
-  - geopandas
-  - numpy
-  - scipy
-  - pandas
-  - scikit-learn
-  - matplotlib
+  - rasterio=1.4.3
+  - gdal=3.10.3
+  - libgdal-core=3.10.3
+  # Lector JPEG 2000 de las bandas Sentinel-2: gdal no lo trae incluido.
+  - libgdal-jp2openjpeg=3.10.3
+  # Lectura de los netCDF de EMIT.
+  - h5py=3.16.0
+  - hdf5=1.14.6
+  - geopandas=1.1.4
+  - pyogrio=0.11.0
+  - shapely=2.1.2
+  - numpy=2.2.6
+  - scipy=1.15.2
+  - pandas=2.3.3
+  - scikit-learn=1.7.2
+  # Variante CPU: pesa mucho menos y es reproducible con semilla fija.
+  - xgboost=3.2.0=cpu*
+  - matplotlib=3.10.9
   - pyyaml
-  - jupyterlab
+  - jupyterlab=4.6.3
   - pip
   - pip:
-      - -e .
+      - -e .[dev]

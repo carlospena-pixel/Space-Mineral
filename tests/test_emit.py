@@ -68,8 +68,11 @@ def test_reproyectar_a_la_misma_grilla_conserva_valores_y_nan():
     transform = Affine(20.0, 0.0, 453960.0, 0.0, -20.0, 7787040.0)
     datos = np.array([[1.0, np.nan], [3.0, 4.0]], dtype=np.float32)
     scene = Scene(
-        cube=np.zeros((1, 2, 2)), band_names=["B1"], transform=transform,
-        crs=crs, mask=np.ones((2, 2), dtype=bool),
+        cube=np.zeros((1, 2, 2)),
+        band_names=["B1"],
+        transform=transform,
+        crs=crs,
+        mask=np.ones((2, 2), dtype=bool),
     )
     salida = reproject_to_scene(datos, transform, crs, scene)
     np.testing.assert_array_equal(np.isnan(salida), np.isnan(datos))

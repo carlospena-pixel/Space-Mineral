@@ -62,10 +62,14 @@ def main() -> None:
     etiqueta = dict(zip(emit.library["index"].tolist(), emit.library["sample_name"]))
 
     print("=" * 68)
-    print(f"Escena EMIT      : {emit.attrs.get('flight_line')}  "
-          f"{emit.attrs.get('time_coverage_start')}  {emit.attrs.get('product_version')}")
+    print(
+        f"Escena EMIT      : {emit.attrs.get('flight_line')}  "
+        f"{emit.attrs.get('time_coverage_start')}  {emit.attrs.get('product_version')}"
+    )
     print(f"Grupo usado      : {grupo}")
-    print(f"Grilla destino   : {scene.crs}  {scene.mask.shape}  (desde {config['scene']})")
+    print(
+        f"Grilla destino   : {scene.crs}  {scene.mask.shape}  (desde {config['scene']})"
+    )
 
     for clave, mapa in config["mapas"].items():
         nombres = _nombres_del_mapa(config["mapas"], clave)
@@ -80,22 +84,32 @@ def main() -> None:
         conteo = Counter(ids_en_aoi[positivos].astype(int).tolist())
 
         write_geotiff(
-            mapa["salida"], puntaje, scene,
+            mapa["salida"],
+            puntaje,
+            scene,
             band_descriptions=[mapa["descripcion_banda"]],
         )
 
         print("-" * 68)
         print(f"Mapa             : {clave}  ({len(ids)} entradas de la biblioteca)")
-        print(f"Con dato EMIT    : {int(con_dato.sum()):>10,} px  "
-              f"{100 * con_dato.sum() / total:8.4f} % del AOI")
-        print(f"Sin dato EMIT    : {int((~con_dato).sum()):>10,} px  "
-              f"{100 * (~con_dato).sum() / total:8.4f} % del AOI")
-        print(f"Puntaje > 0      : {int(positivos.sum()):>10,} px  "
-              f"{100 * positivos.sum() / total:8.4f} % del AOI")
+        print(
+            f"Con dato EMIT    : {int(con_dato.sum()):>10,} px  "
+            f"{100 * con_dato.sum() / total:8.4f} % del AOI"
+        )
+        print(
+            f"Sin dato EMIT    : {int((~con_dato).sum()):>10,} px  "
+            f"{100 * (~con_dato).sum() / total:8.4f} % del AOI"
+        )
+        print(
+            f"Puntaje > 0      : {int(positivos.sum()):>10,} px  "
+            f"{100 * positivos.sum() / total:8.4f} % del AOI"
+        )
         if positivos.any():
             v = puntaje[positivos]
-            print(f"band_depth > 0   : min {v.min():.4f} | mediana {np.median(v):.4f} "
-                  f"| max {v.max():.4f}")
+            print(
+                f"band_depth > 0   : min {v.min():.4f} | mediana {np.median(v):.4f} "
+                f"| max {v.max():.4f}"
+            )
         for i, n in conteo.most_common():
             print(f"    id {i:3d} {n:>9,} px  {etiqueta.get(i, '?')}")
         print(f"GeoTIFF escrito  : {mapa['salida']}")

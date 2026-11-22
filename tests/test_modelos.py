@@ -133,7 +133,11 @@ def test_pila_de_entradas_agrega_indices_y_propaga_nan():
     cubo[1] = 0.4  # B4
     cubo[0, 1, 1] = np.nan
     pila, nombres = build_feature_stack(cubo, bandas)
-    assert nombres[-3:] == ["clay_ratio_b11_b12", "ferric_iron_b4_b2", "ferric_oxide_b11_b8a"]
+    assert nombres[-3:] == [
+        "clay_ratio_b11_b12",
+        "ferric_iron_b4_b2",
+        "ferric_oxide_b11_b8a",
+    ]
     assert pila.shape == (8, 2, 2)
     assert pila[nombres.index("ferric_iron_b4_b2"), 0, 0] == pytest.approx(2.0)
     assert np.isnan(pila[:, 1, 1]).all()

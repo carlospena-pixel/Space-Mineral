@@ -42,14 +42,21 @@ def main() -> None:
     sam, t_sam, crs_sam, f_sam = _leer(args.sam)
     emit, t_emit, crs_emit, f_emit = _leer(args.emit)
     verdad, t_ver, crs_ver, f_ver = _leer(args.truth)
-    if not (t_sam == t_emit == t_ver and crs_sam == crs_emit == crs_ver
-            and f_sam == f_emit == f_ver):
-        raise ValueError("Los tres GeoTIFF no comparten grilla (transform, CRS o forma).")
+    if not (
+        t_sam == t_emit == t_ver
+        and crs_sam == crs_emit == crs_ver
+        and f_sam == f_emit == f_ver
+    ):
+        raise ValueError(
+            "Los tres GeoTIFF no comparten grilla (transform, CRS o forma)."
+        )
 
     alto, ancho = f_ver
     extent = [
-        t_ver.c / 1000, (t_ver.c + ancho * t_ver.a) / 1000,
-        (t_ver.f + alto * t_ver.e) / 1000, t_ver.f / 1000,
+        t_ver.c / 1000,
+        (t_ver.c + ancho * t_ver.a) / 1000,
+        (t_ver.f + alto * t_ver.e) / 1000,
+        t_ver.f / 1000,
     ]
 
     fig, ejes = plt.subplots(1, 3, figsize=(16, 5.6), constrained_layout=True)
@@ -64,8 +71,13 @@ def main() -> None:
     fondo = np.where(np.isfinite(emit), 0.0, np.nan)
     ejes[1].imshow(fondo, cmap=ListedColormap(["#d9d9d9"]), extent=extent)
     emit_pos = np.where(emit > 0, emit, np.nan)
-    im = ejes[1].imshow(emit_pos, cmap="magma_r", vmin=0,
-                        vmax=np.nanpercentile(emit_pos, 99), extent=extent)
+    im = ejes[1].imshow(
+        emit_pos,
+        cmap="magma_r",
+        vmin=0,
+        vmax=np.nanpercentile(emit_pos, 99),
+        extent=extent,
+    )
     fig.colorbar(im, ax=ejes[1], shrink=0.8, label="band depth (mayor = mejor)")
     ejes[1].set_title("EMIT L2B V002 grupo caolinita (2024-07-16)")
 
@@ -75,13 +87,18 @@ def main() -> None:
     clases[verdad == 0] = 1
     clases[verdad == 1] = 2
     cmap = ListedColormap(["#eeeeee", "#4c72b0", "#d62728"])
-    ejes[2].imshow(clases, cmap=cmap, vmin=0, vmax=2, interpolation="nearest",
-                   extent=extent)
+    ejes[2].imshow(
+        clases, cmap=cmap, vmin=0, vmax=2, interpolation="nearest", extent=extent
+    )
     ejes[2].legend(
-        handles=[Patch(color="#d62728", label="positivo"),
-                 Patch(color="#4c72b0", label="negativo"),
-                 Patch(color="#eeeeee", label="ambiguo (no se evalua)")],
-        loc="lower left", fontsize=8, framealpha=0.9,
+        handles=[
+            Patch(color="#d62728", label="positivo"),
+            Patch(color="#4c72b0", label="negativo"),
+            Patch(color="#eeeeee", label="ambiguo (no se evalua)"),
+        ],
+        loc="lower left",
+        fontsize=8,
+        framealpha=0.9,
     )
     ejes[2].set_title("Verdad de terreno SERNAGEOMIN")
 

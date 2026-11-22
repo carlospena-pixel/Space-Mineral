@@ -39,11 +39,15 @@ class MatchedFilter(Detector):
         X = cube.reshape(n, -1).T
         validos = np.all(np.isfinite(X), axis=1)
         if validos.sum() < n + 1:
-            raise ValueError("No hay suficientes pixeles validos para estimar el fondo.")
+            raise ValueError(
+                "No hay suficientes pixeles validos para estimar el fondo."
+            )
 
         idx = np.flatnonzero(validos)
         if idx.size > self.max_fondo:
-            idx = np.random.default_rng(self.seed).choice(idx, self.max_fondo, replace=False)
+            idx = np.random.default_rng(self.seed).choice(
+                idx, self.max_fondo, replace=False
+            )
         fondo = X[idx]
         mu = fondo.mean(axis=0)
         cov = np.cov(fondo, rowvar=False) + self.ridge * np.eye(n)
